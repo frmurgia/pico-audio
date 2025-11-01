@@ -1,15 +1,21 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.0 (uses SDIO for 25 MB/s bandwidth - same as Teensy!)
+// VERSION: 2.1 (uses arduino-pico native SDIO support)
 // DATE: 2025-11-01
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
-// SDIO bandwidth: ~25 MB/s (vs SPI ~1-2 MB/s)
-// This matches Teensy 3.6 SDIO performance!
+// SDIO bandwidth: ~10-12 MB/s (vs SPI ~1-2 MB/s)
 //
 // Dual-Core Architecture:
 // - Core0: Audio processing only (AudioPlayQueue, mixers, I2S)
 // - Core1: SD card operations only (file reading, buffering)
 // - Communication: Thread-safe circular buffers with mutex
+//
+// I2S Pin Configuration (PCM5102 DAC):
+// - BCK (Bit Clock)   -> GP20
+// - LRCK (Word Select)-> GP21
+// - DIN (Data)        -> GP22
+// - VCC               -> 3.3V
+// - GND               -> GND
 //
 // SDIO Pin Configuration (6 pins required):
 // - SD_CLK  -> GP10 (clock, any GPIO)
@@ -23,7 +29,7 @@
 //
 // Performance with SDIO:
 // - 10 files @ 44.1kHz stereo = 1.76 MB/s required
-// - SDIO provides 25 MB/s = 14x headroom!
+// - SDIO provides 10-12 MB/s = 6x headroom!
 // - NO buffer underruns even with 10 simultaneous tracks
 //
 // Controls via Serial:
@@ -33,18 +39,15 @@
 // - 'd' : Show debug info
 
 #include <Adafruit_TinyUSB.h>
-#include <SdFat.h>  // SdFat supports SDIO mode
+#include <SD.h>  // arduino-pico native SD library with SDIO support
 #include <pico-audio.h>
 #include <pico/multicore.h>
 #include <pico/mutex.h>
 
 // SDIO Pin Configuration for RP2350
-// SdioConfig requires: CLK pin, CMD pin, DAT0 pin (DAT1-3 must be consecutive)
 #define SD_CLK_PIN  10
 #define SD_CMD_PIN  11
 #define SD_DAT0_PIN 12  // DAT1=13, DAT2=14, DAT3=15 (consecutive!)
-
-#define SD_CONFIG SdioConfig(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN)
 
 // Number of simultaneous players
 #define NUM_PLAYERS 10
@@ -70,7 +73,7 @@ struct WavHeader {
 // Player state - accessed by both cores
 struct WavPlayer {
   // File handle - ONLY accessed by Core1
-  FsFile file;  // SdFat file type
+  File file;
 
   // Audio queue - ONLY accessed by Core0
   AudioPlayQueue queue;
@@ -123,9 +126,6 @@ AudioConnection patchCord14(mixer3, 0, i2s1, 1);
 float globalVolume = 0.3;  // 30% per channel
 volatile bool core1Running = false;
 volatile bool sdInitialized = false;
-
-// SdFat filesystem
-SdFs sd;
 
 // Forward declarations
 void core1_main();
@@ -418,14 +418,18 @@ void core1_main() {
   core1Running = true;
 
   // Initialize SD card in SDIO mode on Core1
-  Serial.print("Core1: Initializing SD (SDIO)... ");
+  Serial.print("Core1: Configuring SDIO pins... ");
+  SD.setSDIO(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN);
+  Serial.println("OK");
 
-  if (sd.begin(SD_CONFIG)) {
+  Serial.print("Core1: Initializing SD (SDIO)... ");
+  if (SD.begin()) {
     sdInitialized = true;
     Serial.println("OK");
 
     // Print SD card info
-    uint32_t cardSizeMB = sd.card()->sectorCount() / 2048;
+    uint64_t cardSize = SD.size();
+    uint32_t cardSizeMB = cardSize / (1024 * 1024);
     Serial.print("Core1: SD card size: ");
     Serial.print(cardSizeMB);
     Serial.println(" MB");
@@ -480,7 +484,7 @@ void core1_openFile(int playerIndex) {
   WavPlayer* player = &players[playerIndex];
 
   // Open file
-  player->file = sd.open(player->filename, FILE_READ);
+  player->file = SD.open(player->filename, FILE_READ);
   if (!player->file) {
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
