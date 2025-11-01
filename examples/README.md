@@ -80,6 +80,20 @@ Questa cartella contiene esempi completi per tutti i moduli audio disponibili ne
 | [SamplePlayer](SamplePlayer/) | `AudioPlayMemory` | Riproduzione campioni da memoria (6 sample) |
 | [PlayQueue](PlayQueue/) | `AudioPlayQueue` | Generazione audio dinamica via code |
 
+### 💾 SD Card (Lettura/Scrittura)
+
+| Esempio | Moduli | Descrizione |
+|---------|--------|-------------|
+| [SDCardReadTest](SDCardReadTest/) | SD Card SPI | Test lettura SD: lista file, info card, test connettività |
+| [SDCardWriteTest](SDCardWriteTest/) | SD Card SPI | Test scrittura SD: crea file, append, binary write |
+| [SDCardWavPlayer](SDCardWavPlayer/) | `AudioPlayQueue`, SD | Riproduzione 10 file WAV simultanei da SD card |
+
+**Configurazione pin SD Card (SPI):**
+- SCK (Clock) → GP6
+- MOSI (Data In) → GP7
+- MISO (Data Out) → GP4
+- CS (Chip Select) → GP5
+
 ### 🎚️ Mixer & Amplificazione
 
 | Esempio | Modulo | Descrizione |
@@ -168,5 +182,5 @@ Vedi il file LICENSE del repository principale.
 ---
 
 **Ultimo aggiornamento**: 2025-11-01
-**Esempi totali**: 40+
-**Moduli coperti**: Tutti i moduli audio disponibili
+**Esempi totali**: 43
+**Moduli coperti**: Tutti i moduli audio disponibili + SD Card I/O
