@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.2 (WORKING - arduino-pico SDIO)
+// VERSION: 2.3 (Fixed race condition in SD init)
 // DATE: 2025-11-01
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -146,7 +146,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.2 (2025-11-01)             ║");
+  Serial.println("║  VERSION 2.3 (2025-11-01)             ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -206,22 +206,20 @@ void setup() {
   Serial.print("Launching Core1... ");
   multicore_launch_core1(core1_main);
 
-  // Wait for Core1 to initialize
+  // Wait for Core1 to complete SD initialization (not just start)
   unsigned long timeout = millis();
-  while (!core1Running && (millis() - timeout < 5000)) {
-    delay(10);
+  while (!sdInitialized && (millis() - timeout < 10000)) {
+    delay(50);
   }
 
-  if (core1Running) {
+  if (core1Running && sdInitialized) {
     Serial.println("OK");
+    Serial.println("SD card: OK (SDIO mode)");
+  } else if (core1Running) {
+    Serial.println("OK (Core1 running)");
+    Serial.println("SD card: FAILED - Check wiring and card");
   } else {
     Serial.println("FAILED - Core1 not responding");
-  }
-
-  if (sdInitialized) {
-    Serial.println("SD card: OK (SDIO mode)");
-  } else {
-    Serial.println("SD card: FAILED");
   }
 
   Serial.println();
@@ -420,8 +418,10 @@ void core1_main() {
   // Initialize SD card in SDIO mode on Core1
   // arduino-pico SD library: begin(clkPin, cmdPin, dat0Pin) enables SDIO directly
   Serial.print("Core1: Initializing SD (SDIO mode)... ");
-  if (SD.begin(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN)) {
-    sdInitialized = true;
+
+  bool sdOk = SD.begin(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN);
+
+  if (sdOk) {
     Serial.println("OK");
 
     // Print SD card info
@@ -431,8 +431,10 @@ void core1_main() {
     Serial.print(cardSizeMB);
     Serial.println(" MB");
     Serial.println("Core1: SDIO 4-bit mode active (10-12 MB/s)");
+
+    // Set flag AFTER all initialization is complete
+    sdInitialized = true;
   } else {
-    sdInitialized = false;
     Serial.println("FAILED");
     Serial.println("Core1: Check SDIO wiring:");
     Serial.println("  CLK:  GP10");
@@ -441,7 +443,8 @@ void core1_main() {
     Serial.println("  DAT1: GP13");
     Serial.println("  DAT2: GP14");
     Serial.println("  DAT3: GP15");
-    while (1) delay(1000);  // Hang if SD fails
+    sdInitialized = false;
+    // Don't hang - let Core0 detect failure
   }
 
   // Main loop for Core1
