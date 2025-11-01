@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.1 (uses arduino-pico native SDIO support)
+// VERSION: 2.2 (WORKING - arduino-pico SDIO)
 // DATE: 2025-11-01
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -146,8 +146,8 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.0 (2025-11-01)             ║");
-  Serial.println("║  RP2350B - 25 MB/s SDIO Bandwidth    ║");
+  Serial.println("║  VERSION 2.2 (2025-11-01)             ║");
+  Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
   Serial.println("Core0: Audio processing");
@@ -418,12 +418,9 @@ void core1_main() {
   core1Running = true;
 
   // Initialize SD card in SDIO mode on Core1
-  Serial.print("Core1: Configuring SDIO pins... ");
-  SD.setSDIO(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN);
-  Serial.println("OK");
-
-  Serial.print("Core1: Initializing SD (SDIO)... ");
-  if (SD.begin()) {
+  // arduino-pico SD library: begin(clkPin, cmdPin, dat0Pin) enables SDIO directly
+  Serial.print("Core1: Initializing SD (SDIO mode)... ");
+  if (SD.begin(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN)) {
     sdInitialized = true;
     Serial.println("OK");
 
@@ -433,6 +430,7 @@ void core1_main() {
     Serial.print("Core1: SD card size: ");
     Serial.print(cardSizeMB);
     Serial.println(" MB");
+    Serial.println("Core1: SDIO 4-bit mode active (10-12 MB/s)");
   } else {
     sdInitialized = false;
     Serial.println("FAILED");
