@@ -1,4 +1,7 @@
 // SD Card WAV Player - OPTIMIZED for Pimoroni Pico Plus
+// VERSION: 1.0-OPTIMIZED (16KB buffers with pre-fill)
+// DATE: 2025-11-01
+//
 // Plays up to 10 WAV files simultaneously with pre-buffering
 // Optimized for RP2350B with 8MB PSRAM
 //
@@ -111,6 +114,7 @@ void setup() {
   }
 
   Serial.println("\n=== SD WAV Player OPTIMIZED ===");
+  Serial.println("VERSION 1.0-OPTIMIZED (2025-11-01)");
   Serial.println("Pimoroni Pico Plus RP2350B");
   Serial.println("Multi-file playback with pre-buffering");
 

@@ -1,4 +1,7 @@
 // SD Card WAV Player - DUAL CORE VERSION - DEBUG MODE
+// VERSION: 1.1-DEBUG (with extensive diagnostics)
+// DATE: 2025-11-01
+//
 // Same as DualCore but with extensive debugging output
 // Use this to diagnose why audio doesn't play
 
@@ -80,6 +83,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  DUAL CORE WAV PLAYER - DEBUG MODE    ║");
+  Serial.println("║  VERSION 1.1-DEBUG (2025-11-01)       ║");
   Serial.println("╚════════════════════════════════════════╝");
 
   AudioMemory(120);

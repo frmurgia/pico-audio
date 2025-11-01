@@ -1,4 +1,7 @@
 // SD Card WAV Player - Multi-File Playback
+// VERSION: 1.0 (Basic multi-file playback)
+// DATE: 2025-11-01
+//
 // Plays up to 10 WAV files simultaneously from SD card
 //
 // SD Card Wiring (SPI):
@@ -96,6 +99,7 @@ void setup() {
   }
 
   Serial.println("\n=== SD Card WAV Player ===");
+  Serial.println("VERSION 1.0 (2025-11-01)");
   Serial.println("Multi-file playback (up to 10 simultaneous)");
 
   // Configure SPI pins for SD
