@@ -38,8 +38,13 @@
 #include <pico/multicore.h>
 #include <pico/mutex.h>
 
-// SDIO Pin Configuration
-#define SD_CONFIG SdioConfig(FIFO_SDIO)  // Enable SDIO mode
+// SDIO Pin Configuration for RP2350
+// SdioConfig requires: CLK pin, CMD pin, DAT0 pin (DAT1-3 must be consecutive)
+#define SD_CLK_PIN  10
+#define SD_CMD_PIN  11
+#define SD_DAT0_PIN 12  // DAT1=13, DAT2=14, DAT3=15 (consecutive!)
+
+#define SD_CONFIG SdioConfig(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN)
 
 // Number of simultaneous players
 #define NUM_PLAYERS 10
@@ -191,7 +196,7 @@ void setup() {
     players[i].bufferWritePos = 0;
     players[i].bufferAvailable = 0;
 
-    players[i].queue.begin();
+    // AudioPlayQueue doesn't have begin() - no initialization needed
   }
 
   Serial.println("OK");
