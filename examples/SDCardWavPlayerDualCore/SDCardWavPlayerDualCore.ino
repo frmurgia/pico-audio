@@ -1,6 +1,10 @@
 // SD Card WAV Player - DUAL CORE VERSION
 // VERSION: 1.4 (optimized for 8+ simultaneous tracks)
 // DATE: 2025-11-01
+// STATUS: EXPERIMENTAL - May have buffer underruns with 4+ tracks
+//
+// ⚠️ NOTE: If you experience distorted audio with multiple tracks,
+// use SDCardWavPlayerMemory instead (pre-loads files to PSRAM for perfect playback)
 //
 // Uses Core1 for ALL SD operations, Core0 for AUDIO ONLY
 // ZERO audio blocking - complete separation
