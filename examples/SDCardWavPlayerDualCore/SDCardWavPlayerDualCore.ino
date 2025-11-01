@@ -1,5 +1,5 @@
 // SD Card WAV Player - DUAL CORE VERSION
-// VERSION: 1.1 (with Core0 loop delay fix)
+// VERSION: 1.2 (with 1ms Core0 loop delay fix)
 // DATE: 2025-11-01
 //
 // Uses Core1 for ALL SD operations, Core0 for AUDIO ONLY
@@ -134,7 +134,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - DUAL CORE VERSION    ║");
-  Serial.println("║  VERSION 1.1 (2025-11-01)             ║");
+  Serial.println("║  VERSION 1.2 (2025-11-01)             ║");
   Serial.println("║  RP2350B Dual ARM Cortex-M33          ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -269,9 +269,9 @@ void loop() {
   }
 
   // CRITICAL: Small delay to prevent Core0 from starving audio system
-  // Without this, Core0 loops millions of times per second and
-  // the audio interrupt doesn't get enough time to process
-  delayMicroseconds(100);
+  // Without this, Core0 loops too fast and starves the audio interrupt
+  // 1ms delay is sufficient (same as Core1 delay)
+  delay(1);
 }
 
 void serviceAudioQueue(int playerIndex) {
