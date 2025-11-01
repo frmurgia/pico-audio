@@ -1,0 +1,15 @@
+{
+  "name": "pico-audio",
+  "version": "1.0.0",
+  "description": "Teensy Audio Library port for RP2040/RP2350 with I2S support",
+  "keywords": "audio, i2s, dsp, synthesis, effects, rp2040, rp2350",
+  "authors": {
+    "name": "Ported for RP2040/RP2350"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/frmurgia/pico-audio"
+  },
+  "frameworks": "arduino",
+  "platforms": "raspberrypi"
+}
