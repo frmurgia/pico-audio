@@ -214,7 +214,7 @@ void playTrack(int playerIndex) {
 
   // Read and validate WAV header
   WavHeader header;
-  player->file.read(&header, sizeof(WavHeader));
+  player->file.read((uint8_t*)&header, sizeof(WavHeader));
 
   if (strncmp(header.riff, "RIFF", 4) != 0 ||
       strncmp(header.wave, "WAVE", 4) != 0) {
@@ -247,8 +247,8 @@ void playTrack(int playerIndex) {
   bool foundData = false;
 
   while (player->file.available()) {
-    player->file.read(chunkID, 4);
-    player->file.read(&chunkSize, 4);
+    player->file.read((uint8_t*)chunkID, 4);
+    player->file.read((uint8_t*)&chunkSize, 4);
 
     if (strncmp(chunkID, "data", 4) == 0) {
       foundData = true;
@@ -298,11 +298,11 @@ void servicePlayer(int playerIndex) {
 
   if (player->numChannels == 1) {
     // Mono - read directly
-    player->file.read(buffer, bytesToRead);
+    player->file.read((uint8_t*)buffer, bytesToRead);
   } else {
     // Stereo - mix to mono by averaging channels
     int16_t stereoBuffer[256];
-    player->file.read(stereoBuffer, bytesToRead * 2);
+    player->file.read((uint8_t*)stereoBuffer, bytesToRead * 2);
 
     for (int i = 0; i < samplesToRead; i++) {
       int32_t left = stereoBuffer[i * 2];
