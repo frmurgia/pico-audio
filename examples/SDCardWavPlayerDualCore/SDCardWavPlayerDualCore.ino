@@ -1,5 +1,5 @@
 // SD Card WAV Player - DUAL CORE VERSION
-// VERSION: 1.2 (with 1ms Core0 loop delay fix)
+// VERSION: 1.3 (with mixer gain fix - WORKING!)
 // DATE: 2025-11-01
 //
 // Uses Core1 for ALL SD operations, Core0 for AUDIO ONLY
@@ -111,7 +111,9 @@ AudioConnection patchCord13(mixer3, 0, i2s1, 0);
 AudioConnection patchCord14(mixer3, 0, i2s1, 1);
 
 // Global state
-float globalVolume = 0.1;
+// Volume: 0.0 to 1.0, divided among players
+// For 10 players: 0.3 per channel = reasonable mix level
+float globalVolume = 0.3;
 volatile bool core1Running = false;
 volatile bool sdInitialized = false;
 
@@ -134,7 +136,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - DUAL CORE VERSION    ║");
-  Serial.println("║  VERSION 1.2 (2025-11-01)             ║");
+  Serial.println("║  VERSION 1.3 (2025-11-01)             ║");
   Serial.println("║  RP2350B Dual ARM Cortex-M33          ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -358,11 +360,12 @@ void stopAll() {
 }
 
 void updateMixerGains() {
-  float gain = globalVolume / 10.0;
+  // Apply globalVolume directly to each mixer channel
+  // Default is 0.3 (30%) per channel for balanced multi-file playback
   for (int i = 0; i < 4; i++) {
-    mixer1.gain(i, gain);
-    mixer2.gain(i, gain);
-    mixer3.gain(i, gain);
+    mixer1.gain(i, globalVolume);
+    mixer2.gain(i, globalVolume);
+    mixer3.gain(i, globalVolume);
   }
 }
 
