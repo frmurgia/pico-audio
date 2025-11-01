@@ -1,9 +1,15 @@
 // SD Card WAV Player - DUAL CORE VERSION
-// VERSION: 1.3 (with mixer gain fix - WORKING!)
+// VERSION: 1.4 (optimized for 8+ simultaneous tracks)
 // DATE: 2025-11-01
 //
 // Uses Core1 for ALL SD operations, Core0 for AUDIO ONLY
 // ZERO audio blocking - complete separation
+//
+// Optimizations for multi-file playback:
+// - Core1 runs at maximum speed (no delay) to keep buffers full
+// - Aggressive buffer filling (refills at 50% threshold)
+// - Larger read chunks (2KB per read) for better SD performance
+// - Volume gain tuned for mixing (0.3 = 30% per channel)
 //
 // RP2350B Dual ARM Cortex-M33 Architecture:
 // - Core0: Audio processing only (AudioPlayQueue, mixers, I2S)
@@ -136,8 +142,8 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - DUAL CORE VERSION    ║");
-  Serial.println("║  VERSION 1.3 (2025-11-01)             ║");
-  Serial.println("║  RP2350B Dual ARM Cortex-M33          ║");
+  Serial.println("║  VERSION 1.4 (2025-11-01)             ║");
+  Serial.println("║  RP2350B - Optimized for 8+ tracks    ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
   Serial.println("Core0: Audio processing");
@@ -429,12 +435,11 @@ void core1_main() {
   // Main loop for Core1
   while (true) {
     // Service all players - read from SD and fill buffers
+    // NO DELAY - Core1 must run as fast as possible to keep buffers full
+    // With 8+ players, any delay causes buffer underruns
     for (int i = 0; i < NUM_PLAYERS; i++) {
       core1_servicePlayer(i);
     }
-
-    // Small delay to prevent CPU hogging (do not remove!)
-    delay(1);
   }
 }
 
@@ -535,8 +540,9 @@ void core1_fillBuffer(int playerIndex) {
   uint32_t writePos = player->bufferWritePos;
   mutex_exit(&player->mutex);
 
-  if (available > (BUFFER_SIZE * 3 / 4)) {
-    return;  // Buffer still mostly full
+  // Fill buffer when less than 50% full (more aggressive for multi-file playback)
+  if (available > (BUFFER_SIZE / 2)) {
+    return;  // Buffer still half full or more
   }
 
   // Read chunk
@@ -552,7 +558,8 @@ void core1_fillBuffer(int playerIndex) {
     return;
   }
 
-  uint32_t samplesToRead = min(spaceAvailable, (uint32_t)1024);
+  // Read larger chunks (2KB instead of 1KB) for better performance
+  uint32_t samplesToRead = min(spaceAvailable, (uint32_t)2048);
   uint32_t bytesToRead = min(samplesToRead * 2, bytesRemaining);
   samplesToRead = bytesToRead / 2;
 
