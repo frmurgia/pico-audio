@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthWaveformSine
 // Plays a pure sine wave at 440 Hz (A note)
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

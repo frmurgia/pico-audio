@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthWaveformSineModulated
 // Uses one sine wave to modulate the frequency of another (FM synthesis)
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

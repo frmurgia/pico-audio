@@ -2,6 +2,7 @@
 // Demonstrates AudioFilterFIR
 // Finite Impulse Response filter with custom coefficients
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

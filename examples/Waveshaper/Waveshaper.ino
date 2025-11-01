@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectWaveshaper
 // Non-linear waveshaping for distortion and harmonics
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

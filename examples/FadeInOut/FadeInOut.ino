@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectFade
 // Smooth volume fades to prevent clicks and pops
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

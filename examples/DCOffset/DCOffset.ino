@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthWaveformDc
 // Generates constant DC level (useful for control signals and testing)
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

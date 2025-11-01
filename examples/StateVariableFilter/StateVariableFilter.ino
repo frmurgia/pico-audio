@@ -2,6 +2,7 @@
 // Demonstrates AudioFilterStateVariable
 // Universal filter with simultaneous lowpass, bandpass, and highpass outputs
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

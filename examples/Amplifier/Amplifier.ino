@@ -2,6 +2,7 @@
 // Demonstrates AudioAmplifier
 // Controls signal level with smooth ramping
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

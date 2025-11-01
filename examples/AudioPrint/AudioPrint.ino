@@ -2,6 +2,7 @@
 // Demonstrates AudioAnalyzePrint
 // Prints raw audio data to serial for debugging and analysis
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

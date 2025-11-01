@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthWaveformSineHires
 // Uses higher precision for lower distortion
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

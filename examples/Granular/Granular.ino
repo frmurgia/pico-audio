@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectGranular
 // Creates granular effects by playing tiny overlapping pieces of audio
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

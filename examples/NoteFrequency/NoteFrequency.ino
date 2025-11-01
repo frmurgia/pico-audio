@@ -2,6 +2,7 @@
 // Demonstrates AudioAnalyzeNoteFrequency
 // Detects musical note frequencies (guitar tuner, pitch tracker)
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

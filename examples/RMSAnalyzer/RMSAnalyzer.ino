@@ -2,6 +2,7 @@
 // Demonstrates AudioAnalyzeRMS
 // Measures Root Mean Square (average power/loudness)
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

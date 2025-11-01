@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectWaveFolder
 // Folds waveform back on itself for complex harmonic distortion
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

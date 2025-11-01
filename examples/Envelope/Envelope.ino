@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectEnvelope
 // Attack-Decay-Sustain-Release envelope shaping
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

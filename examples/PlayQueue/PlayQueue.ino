@@ -2,6 +2,7 @@
 // Demonstrates AudioPlayQueue
 // Allows dynamic audio generation and playback from code
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

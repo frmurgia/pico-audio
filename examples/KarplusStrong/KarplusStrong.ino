@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthKarplusStrong
 // Physical modeling synthesis for plucked string sounds
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components
