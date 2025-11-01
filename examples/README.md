@@ -86,8 +86,9 @@ Questa cartella contiene esempi completi per tutti i moduli audio disponibili ne
 |---------|--------|-------------|
 | [SDCardReadTest](SDCardReadTest/) | SD Card SPI | Test lettura SD: lista file, info card, test connettività |
 | [SDCardWriteTest](SDCardWriteTest/) | SD Card SPI | Test scrittura SD: crea file, append, binary write |
-| [SDCardWavPlayer](SDCardWavPlayer/) | `AudioPlayQueue`, SD | Riproduzione 10 file WAV simultanei da SD card |
-| [SDCardWavPlayerOptimized](SDCardWavPlayerOptimized/) | `AudioPlayQueue`, SD | **OTTIMIZZATO**: Pre-buffering 16KB/player, smooth playback |
+| [SDCardWavPlayer](SDCardWavPlayer/) | `AudioPlayQueue`, SD | Riproduzione 10 file WAV simultanei da SD card (base) |
+| [SDCardWavPlayerOptimized](SDCardWavPlayerOptimized/) | `AudioPlayQueue`, SD | Ottimizzato: Pre-buffering 16KB/player |
+| [SDCardWavPlayerDualCore](SDCardWavPlayerDualCore/) | `AudioPlayQueue`, SD, Core1 | **DUAL-CORE**: Core1 per SD, Core0 per audio - ZERO blocking! |
 
 **Configurazione pin SD Card (SPI):**
 - SCK (Clock) → GP6
@@ -183,5 +184,5 @@ Vedi il file LICENSE del repository principale.
 ---
 
 **Ultimo aggiornamento**: 2025-11-01
-**Esempi totali**: 44
-**Moduli coperti**: Tutti i moduli audio disponibili + SD Card I/O (con versione ottimizzata)
+**Esempi totali**: 45
+**Moduli coperti**: Tutti i moduli audio disponibili + SD Card I/O (base, ottimizzata, dual-core)
