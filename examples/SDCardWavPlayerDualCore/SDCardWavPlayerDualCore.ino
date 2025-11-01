@@ -1,4 +1,7 @@
 // SD Card WAV Player - DUAL CORE VERSION
+// VERSION: 1.1 (with Core0 loop delay fix)
+// DATE: 2025-11-01
+//
 // Uses Core1 for ALL SD operations, Core0 for AUDIO ONLY
 // ZERO audio blocking - complete separation
 //
@@ -131,6 +134,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - DUAL CORE VERSION    ║");
+  Serial.println("║  VERSION 1.1 (2025-11-01)             ║");
   Serial.println("║  RP2350B Dual ARM Cortex-M33          ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
