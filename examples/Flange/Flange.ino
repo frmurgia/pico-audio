@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectFlange
 // Creates sweeping "jet plane" or "woosh" effect
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

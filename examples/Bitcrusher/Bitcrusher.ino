@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectBitcrusher
 // Reduces bit depth and sample rate for lo-fi digital distortion
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

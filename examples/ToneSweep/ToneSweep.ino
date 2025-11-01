@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthToneSweep
 // Creates smooth frequency sweeps (useful for measurements and effects)
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

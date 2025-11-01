@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectChorus
 // Creates thick, detuned sound by mixing delayed copies
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

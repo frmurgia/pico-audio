@@ -3,6 +3,7 @@
 // Performs 1024-point FFT for frequency analysis
 // Note: FFT256 has issues on RP2350, use FFT1024 instead
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

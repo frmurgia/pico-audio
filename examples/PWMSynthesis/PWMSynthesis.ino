@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthWaveformPWM
 // Creates pulse width modulation waveform with variable duty cycle
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectMidSide
 // Encodes/decodes mid-side stereo for advanced stereo processing
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

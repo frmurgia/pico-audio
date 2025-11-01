@@ -2,6 +2,7 @@
 // Demonstrates AudioMixer4
 // Mixes up to 4 audio sources with independent gain control
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

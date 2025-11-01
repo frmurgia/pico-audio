@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthNoiseWhite
 // Generates white noise (all frequencies equally represented)
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectRectifier
 // Full-wave and half-wave rectification for octave-up effects
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

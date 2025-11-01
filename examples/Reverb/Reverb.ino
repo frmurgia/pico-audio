@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectReverb
 // Adds reverb/room ambience to sound
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

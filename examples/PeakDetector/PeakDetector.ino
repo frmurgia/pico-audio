@@ -2,6 +2,7 @@
 // Demonstrates AudioAnalyzePeak
 // Detects peak signal level (useful for VU meters, limiters)
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

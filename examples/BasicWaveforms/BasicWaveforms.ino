@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthWaveform
 // Cycles through different waveform types: sine, sawtooth, square, triangle
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

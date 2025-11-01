@@ -2,6 +2,7 @@
 // Demonstrates AudioAnalyzeToneDetect
 // Detects presence and amplitude of specific frequency
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

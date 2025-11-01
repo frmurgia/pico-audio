@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectDelay
 // Creates echo effect with adjustable delay time
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

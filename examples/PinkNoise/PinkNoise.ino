@@ -2,6 +2,7 @@
 // Demonstrates AudioSynthNoisePink
 // Generates pink noise (1/f noise, more natural sounding than white noise)
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

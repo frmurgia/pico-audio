@@ -2,6 +2,7 @@
 // Demonstrates AudioFilterBiquad
 // Versatile 2nd-order IIR filter: lowpass, highpass, bandpass, notch
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

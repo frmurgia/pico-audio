@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectFreeverb
 // High-quality reverb with room size and damping controls
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components

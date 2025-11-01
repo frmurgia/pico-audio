@@ -2,6 +2,7 @@
 // Demonstrates AudioEffectDigitalCombine
 // Bitwise operations (AND, OR, XOR) on audio signals
 
+#include <Adafruit_TinyUSB.h>
 #include <pico-audio.h>
 
 // Create audio components
