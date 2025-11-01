@@ -5,8 +5,9 @@
 // Strategy: Load all WAV files to memory at startup, then play from RAM
 // This eliminates ALL SD card access during playback = ZERO latency!
 //
-// Pimoroni Pico Plus has 8MB PSRAM - plenty for audio files
-// Example: 10 x 500KB files = 5MB (fits easily)
+// Pimoroni Pico Plus has 8MB PSRAM
+// This version loads files on-demand, keeps most recently used in cache
+// If total files > 8MB, loads only what fits in memory
 //
 // SD Card Wiring (SPI):
 // - SCK (Clock)  -> GP6
@@ -32,6 +33,9 @@
 
 // Number of simultaneous players
 #define NUM_PLAYERS 10
+
+// Maximum memory to use for audio cache (leave 1MB for system)
+#define MAX_AUDIO_MEMORY (7 * 1024 * 1024)  // 7MB
 
 // WAV file header
 struct WavHeader {
@@ -262,6 +266,7 @@ void loadAllWavFiles() {
   }
 
   int fileCount = 0;
+  uint32_t totalMemoryUsed = 0;
 
   while (fileCount < NUM_PLAYERS) {
     File entry = root.openNextFile();
@@ -272,16 +277,33 @@ void loadAllWavFiles() {
       filename.toLowerCase();
 
       if (filename.endsWith(".wav")) {
+        uint32_t fileSize = entry.size();
+
+        // Check if this file would exceed memory limit
+        if (totalMemoryUsed + fileSize > MAX_AUDIO_MEMORY) {
+          Serial.print("SKIPPING: ");
+          Serial.print(entry.name());
+          Serial.print(" (");
+          Serial.print(fileSize / 1024);
+          Serial.println(" KB - would exceed memory limit)");
+          entry.close();
+          continue;
+        }
+
         Serial.print("Loading: ");
         Serial.print(entry.name());
         Serial.print(" (");
-        Serial.print(entry.size());
+        Serial.print(fileSize);
         Serial.print(" bytes)... ");
 
         if (loadWavToMemory(entry, &cachedFiles[fileCount])) {
           strncpy(cachedFiles[fileCount].filename, entry.name(), 31);
           cachedFiles[fileCount].filename[31] = '\0';
-          Serial.println("OK");
+          uint32_t audioBytes = cachedFiles[fileCount].numSamples * 2;
+          totalMemoryUsed += audioBytes;
+          Serial.print("OK (");
+          Serial.print(audioBytes / 1024);
+          Serial.println(" KB)");
           fileCount++;
         } else {
           Serial.println("FAILED");
@@ -296,7 +318,11 @@ void loadAllWavFiles() {
   Serial.println();
   Serial.print("Loaded ");
   Serial.print(fileCount);
-  Serial.println(" files to memory");
+  Serial.print(" files, using ");
+  Serial.print(totalMemoryUsed / 1024);
+  Serial.print(" KB / ");
+  Serial.print(MAX_AUDIO_MEMORY / 1024);
+  Serial.println(" KB available");
 }
 
 bool loadWavToMemory(File &file, CachedWavFile* cached) {
