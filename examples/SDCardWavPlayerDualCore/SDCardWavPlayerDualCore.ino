@@ -263,6 +263,11 @@ void loop() {
       AudioProcessorUsageMaxReset();
     }
   }
+
+  // CRITICAL: Small delay to prevent Core0 from starving audio system
+  // Without this, Core0 loops millions of times per second and
+  // the audio interrupt doesn't get enough time to process
+  delayMicroseconds(100);
 }
 
 void serviceAudioQueue(int playerIndex) {
@@ -421,7 +426,7 @@ void core1_main() {
       core1_servicePlayer(i);
     }
 
-    // Small delay to prevent CPU hogging
+    // Small delay to prevent CPU hogging (do not remove!)
     delay(1);
   }
 }
