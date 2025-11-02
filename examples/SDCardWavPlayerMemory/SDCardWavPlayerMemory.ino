@@ -1,6 +1,6 @@
 // SD Card WAV Player - MEMORY CACHED VERSION
-// VERSION: 2.0 (pre-loads all WAV files to PSRAM)
-// DATE: 2025-11-01
+// VERSION: 2.1 (SDIO + auto-play)
+// DATE: 2025-11-02
 //
 // Strategy: Load all WAV files to memory at startup, then play from RAM
 // This eliminates ALL SD card access during playback = ZERO latency!
@@ -9,11 +9,10 @@
 // This version loads files on-demand, keeps most recently used in cache
 // If total files > 8MB, loads only what fits in memory
 //
-// SD Card Wiring (SPI):
-// - SCK (Clock)  -> GP6
-// - MOSI (Data In) -> GP7
-// - MISO (Data Out) -> GP4
-// - CS (Chip Select) -> GP5
+// SD Card Wiring (SDIO 4-bit mode):
+// - CLK  -> GP7
+// - CMD  -> GP6
+// - DAT0 -> GP8 (DAT1=GP9, DAT2=GP10, DAT3=GP11)
 //
 // Controls via Serial:
 // - '1'-'9','0' : Play track 1-10
@@ -25,11 +24,10 @@
 #include <SD.h>
 #include <pico-audio.h>
 
-// SD Card pin configuration
-#define SD_CS_PIN   5
-#define SD_SCK_PIN  6
-#define SD_MOSI_PIN 7
-#define SD_MISO_PIN 4
+// SD Card pin configuration (SDIO 4-bit)
+#define SD_CLK_PIN  7
+#define SD_CMD_PIN  6
+#define SD_DAT0_PIN 8  // DAT1=9, DAT2=10, DAT3=11 (must be consecutive!)
 
 // Number of simultaneous players
 #define NUM_PLAYERS 10
@@ -104,23 +102,25 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - MEMORY CACHED        ║");
-  Serial.println("║  VERSION 2.0 (2025-11-01)             ║");
-  Serial.println("║  Pre-loads files to PSRAM @ startup   ║");
+  Serial.println("║  VERSION 2.1 (2025-11-02)             ║");
+  Serial.println("║  SDIO 4-bit + Auto-play + PSRAM       ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
 
-  // Configure SPI for SD
-  SPI.setRX(SD_MISO_PIN);
-  SPI.setTX(SD_MOSI_PIN);
-  SPI.setSCK(SD_SCK_PIN);
-
-  Serial.print("Initializing SD card... ");
-  if (!SD.begin(SD_CS_PIN)) {
+  // Initialize SD card in SDIO 4-bit mode
+  Serial.print("Initializing SD card (SDIO 4-bit)... ");
+  if (!SD.begin(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN)) {
     Serial.println("FAILED!");
-    Serial.println("Check SD card and wiring");
+    Serial.println("Check SD card and SDIO wiring:");
+    Serial.println("  CLK:  GP7");
+    Serial.println("  CMD:  GP6");
+    Serial.println("  DAT0: GP8");
+    Serial.println("  DAT1: GP9");
+    Serial.println("  DAT2: GP10");
+    Serial.println("  DAT3: GP11");
     while (1) delay(1000);
   }
-  Serial.println("OK");
+  Serial.println("OK (SDIO 4-bit @ 10-12 MB/s)");
 
   // Initialize audio
   AudioMemory(120);
@@ -136,7 +136,7 @@ void setup() {
     players[i].playing = false;
     players[i].playPosition = 0;
     players[i].wavFile = NULL;
-    players[i].queue.begin();
+    // Note: AudioPlayQueue doesn't have begin() - constructor handles init
   }
 
   // Pre-load all WAV files from SD to memory
@@ -151,8 +151,18 @@ void setup() {
   Serial.println();
   showMemoryInfo();
 
+  // Auto-play all loaded tracks
+  Serial.println();
+  Serial.println("Auto-starting all loaded tracks...");
+  for (int i = 0; i < NUM_PLAYERS; i++) {
+    if (cachedFiles[i].loaded) {
+      playTrack(i);
+      delay(50);  // Small delay between starts
+    }
+  }
+
   Serial.println("\nReady!");
-  Serial.println("Commands: '1'-'0' = play track, 's' = stop all, 'i' = info");
+  Serial.println("Commands: '1'-'0' = toggle track, 's' = stop all, 'i' = info");
 }
 
 void loop() {
