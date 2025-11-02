@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.14 (Re-enable Core1 error messages only - critical for debugging)
+// VERSION: 2.15 (Add 'a' command to load all 10 tracks simultaneously)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -34,6 +34,7 @@
 //
 // Controls via Serial:
 // - '1'-'9','0' : Play track 1-10
+// - 'a' : Load all 10 tracks simultaneously
 // - 's' : Stop all tracks
 // - 'l' : List available WAV files
 // - 'd' : Show debug info
@@ -146,7 +147,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.14 (2025-11-02)            ║");
+  Serial.println("║  VERSION 2.15 (2025-11-02)            ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -224,7 +225,7 @@ void setup() {
 
   Serial.println();
   Serial.println("Ready!");
-  Serial.println("Commands: '1'-'0' = play track, 's' = stop, 'l' = list, 'd' = debug");
+  Serial.println("Commands: '1'-'0' = play track, 'a' = all tracks, 's' = stop, 'l' = list, 'd' = debug");
 }
 
 void loop() {
@@ -236,6 +237,8 @@ void loop() {
       playTrack(cmd - '1');
     } else if (cmd == '0') {
       playTrack(9);
+    } else if (cmd == 'a' || cmd == 'A') {
+      playAll();
     } else if (cmd == 's' || cmd == 'S') {
       stopAll();
     } else if (cmd == 'l' || cmd == 'L') {
@@ -384,6 +387,15 @@ void stopAll() {
       stopPlayer(i);
     }
   }
+}
+
+void playAll() {
+  Serial.println("▶▶▶ Loading all 10 tracks simultaneously...");
+  for (int i = 0; i < NUM_PLAYERS; i++) {
+    playTrack(i);
+    delay(10);  // Small delay between starts to avoid SD contention
+  }
+  Serial.println("✓ All tracks loading in progress");
 }
 
 void updateMixerGains() {
