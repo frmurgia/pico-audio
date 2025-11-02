@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.11 (Enhanced EOF debug - always print when player stops)
+// VERSION: 2.12 (Fix stopRequested bug preventing multi-track playback)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -18,8 +18,8 @@
 // - GND               -> GND
 //
 // SDIO Pin Configuration (6 pins required - TESTED WORKING):
-// - SD_CLK  -> GP7  (clock, any GPIO)
-// - SD_CMD  -> GP6  (command, any GPIO)
+// - SD_CLK  -> GP6  (clock, any GPIO)
+// - SD_CMD  -> GP7  (command, any GPIO)
 // - SD_DAT0 -> GP8  (data bit 0, must be base for consecutive pins)
 // - SD_DAT1 -> GP9  (data bit 1, must be DAT0+1)
 // - SD_DAT2 -> GP10 (data bit 2, must be DAT0+2)
@@ -44,9 +44,9 @@
 #include <pico/multicore.h>
 #include <pico/mutex.h>
 
-// SDIO Pin Configuration for RP2350 (TESTED WORKING: CLK=7, CMD=6)
-#define SD_CLK_PIN  7   // These are the pins that worked before!
-#define SD_CMD_PIN  6   // SD initialized and files were visible
+// SDIO Pin Configuration for RP2350 (USER FINAL CONFIG: CLK=6, CMD=7)
+#define SD_CLK_PIN  6   // User's working configuration
+#define SD_CMD_PIN  7   // User's working configuration
 #define SD_DAT0_PIN 8   // DAT1=9, DAT2=10, DAT3=11 (consecutive!)
 
 // Number of simultaneous players
@@ -146,16 +146,16 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.11 (2025-11-02)            ║");
+  Serial.println("║  VERSION 2.12 (2025-11-02)            ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
   Serial.println("Core0: Audio processing");
   Serial.println("Core1: SD card operations (SDIO)");
   Serial.println();
-  Serial.println("SDIO Pins (TESTED WORKING - CLK=7, CMD=6):");
-  Serial.println("  CLK:  GP7");
-  Serial.println("  CMD:  GP6");
+  Serial.println("SDIO Pins (TESTED WORKING - CLK=6, CMD=7):");
+  Serial.println("  CLK:  GP6");
+  Serial.println("  CMD:  GP7");
   Serial.println("  DAT0: GP8");
   Serial.println("  DAT1: GP9");
   Serial.println("  DAT2: GP10");
@@ -331,7 +331,7 @@ void playTrack(int playerIndex) {
   }
 
   // Build filename
-  snprintf(player->filename, sizeof(player->filename), "%d.wav", playerIndex + 1);
+  snprintf(player->filename, sizeof(player->filename), "track%d.wav", playerIndex + 1);
 
   // Reset state
   mutex_enter_blocking(&player->mutex);
@@ -341,6 +341,7 @@ void playTrack(int playerIndex) {
   player->bufferAvailable = 0;
   player->underrunCount = 0;
   player->core1ReadCount = 0;
+  player->stopRequested = false;  // Clear any lingering stop request (CRITICAL FIX v2.12)
   player->playing = true;  // Signal Core1 to start
   mutex_exit(&player->mutex);
 
@@ -352,12 +353,24 @@ void stopPlayer(int playerIndex) {
   if (playerIndex < 0 || playerIndex >= NUM_PLAYERS) return;
 
   WavPlayer* player = &players[playerIndex];
+
+  // If not playing, nothing to do
+  if (!player->playing) return;
+
   player->stopRequested = true;
 
   // Wait for stop to complete
   unsigned long timeout = millis();
   while (player->playing && (millis() - timeout < 1000)) {
     delay(10);
+  }
+
+  // If still playing after timeout, force stop (file might be closed already)
+  if (player->playing) {
+    mutex_enter_blocking(&player->mutex);
+    player->playing = false;
+    player->stopRequested = false;
+    mutex_exit(&player->mutex);
   }
 
   Serial.print("■ Stopped track ");
@@ -441,7 +454,7 @@ void showFileList() {
   if (wavFiles == 0) {
     Serial.println("╠════════════════════════════════════════════╣");
     Serial.println("║ ⚠️  NO WAV FILES FOUND!");
-    Serial.println("║    Player looks for: 1.wav, 2.wav, etc.");
+    Serial.println("║    Player looks for: track1.wav, track2.wav, etc.");
   }
 
   Serial.println("╚════════════════════════════════════════════╝");
@@ -502,8 +515,8 @@ void core1_main() {
   } else {
     Serial.println("FAILED");
     Serial.println("Core1: Check SDIO wiring:");
-    Serial.println("  CLK:  GP7");
-    Serial.println("  CMD:  GP6");
+    Serial.println("  CLK:  GP6");
+    Serial.println("  CMD:  GP7");
     Serial.println("  DAT0: GP8");
     Serial.println("  DAT1: GP9");
     Serial.println("  DAT2: GP10");
