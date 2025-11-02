@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.7 (Bulk read - fixed slow sample-by-sample reading)
+// VERSION: 2.8 (Debug Core1 buffer filling)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -146,7 +146,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.7 (2025-11-02)             ║");
+  Serial.println("║  VERSION 2.8 (2025-11-02)             ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -656,14 +656,28 @@ void core1_openFile(int playerIndex) {
 void core1_fillBuffer(int playerIndex) {
   WavPlayer* player = &players[playerIndex];
 
+  // Debug counter - print every 100 calls
+  static uint32_t debugCounter = 0;
+  bool shouldDebug = (++debugCounter % 100 == 0);
+
   // Check if buffer needs filling
   mutex_enter_blocking(&player->mutex);
   uint32_t available = player->bufferAvailable;
   uint32_t writePos = player->bufferWritePos;
   mutex_exit(&player->mutex);
 
+  if (shouldDebug) {
+    Serial.print("DEBUG Core1: Player ");
+    Serial.print(playerIndex + 1);
+    Serial.print(" buf=");
+    Serial.print(available);
+    Serial.print("/");
+    Serial.print(BUFFER_SIZE);
+  }
+
   // Fill buffer when less than 75% full (less aggressive with SDIO speed)
   if (available > (BUFFER_SIZE * 3 / 4)) {
+    if (shouldDebug) Serial.println(" → FULL, skipping");
     return;  // Buffer still mostly full
   }
 
@@ -671,7 +685,15 @@ void core1_fillBuffer(int playerIndex) {
   uint32_t spaceAvailable = BUFFER_SIZE - available;
   uint32_t bytesRemaining = player->dataSize - player->dataPosition;
 
+  if (shouldDebug) {
+    Serial.print(" pos=");
+    Serial.print(player->dataPosition);
+    Serial.print("/");
+    Serial.print(player->dataSize);
+  }
+
   if (bytesRemaining == 0) {
+    if (shouldDebug) Serial.println(" → EOF");
     // End of file
     player->file.close();
     mutex_enter_blocking(&player->mutex);
@@ -694,6 +716,18 @@ void core1_fillBuffer(int playerIndex) {
     uint32_t bytesRead = player->file.read((uint8_t*)tempBuffer, bytesToRead);
     uint32_t samplesRead = bytesRead / 2;
 
+    if (shouldDebug) {
+      Serial.print(" read=");
+      Serial.print(bytesRead);
+      Serial.print("/");
+      Serial.print(bytesToRead);
+    }
+
+    if (bytesRead == 0) {
+      if (shouldDebug) Serial.println(" → READ FAILED!");
+      return;  // Read failed
+    }
+
     // Copy from temp buffer to circular buffer
     for (uint32_t i = 0; i < samplesRead; i++) {
       player->buffer[writePos] = tempBuffer[i];
@@ -706,6 +740,18 @@ void core1_fillBuffer(int playerIndex) {
     uint32_t bytesRead = player->file.read((uint8_t*)tempBuffer, bytesToRead);
     uint32_t samplesRead = bytesRead / 2;
 
+    if (shouldDebug) {
+      Serial.print(" read=");
+      Serial.print(bytesRead);
+      Serial.print("/");
+      Serial.print(bytesToRead);
+    }
+
+    if (bytesRead == 0) {
+      if (shouldDebug) Serial.println(" → READ FAILED!");
+      return;  // Read failed
+    }
+
     // Mix stereo to mono
     for (uint32_t i = 0; i < samplesRead / 2; i++) {
       int16_t left = tempBuffer[i * 2];
@@ -717,6 +763,8 @@ void core1_fillBuffer(int playerIndex) {
     player->dataPosition += bytesRead;
     samplesToRead = samplesRead / 2;  // Mono samples written
   }
+
+  if (shouldDebug) Serial.println(" → OK!");
 
   // Update write position and available count (with mutex)
   mutex_enter_blocking(&player->mutex);
