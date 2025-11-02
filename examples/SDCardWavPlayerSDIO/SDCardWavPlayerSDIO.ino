@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.4 (Comprehensive file open debug)
+// VERSION: 2.5 (Working file list + debug output)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -146,7 +146,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.4 (2025-11-02)             ║");
+  Serial.println("║  VERSION 2.5 (2025-11-02)             ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -239,8 +239,7 @@ void loop() {
     } else if (cmd == 's' || cmd == 'S') {
       stopAll();
     } else if (cmd == 'l' || cmd == 'L') {
-      // Core1 will handle this
-      Serial.println("LIST");
+      showFileList();
     } else if (cmd == 'd' || cmd == 'D') {
       showDebugInfo();
     }
@@ -380,6 +379,72 @@ void updateMixerGains() {
     mixer2.gain(i, globalVolume);
     mixer3.gain(i, globalVolume);
   }
+}
+
+void showFileList() {
+  if (!sdInitialized) {
+    Serial.println("\n⚠️  SD card not initialized!");
+    return;
+  }
+
+  Serial.println("\n╔════════════════ FILE LIST ═════════════════╗");
+  Serial.println("║ WAV files on SD card:");
+  Serial.println("╠════════════════════════════════════════════╣");
+
+  File root = SD.open("/");
+  if (!root) {
+    Serial.println("║ ERROR: Cannot open root directory");
+    Serial.println("╚════════════════════════════════════════════╝");
+    return;
+  }
+
+  int totalFiles = 0;
+  int wavFiles = 0;
+
+  while (true) {
+    File entry = root.openNextFile();
+    if (!entry) break;
+
+    totalFiles++;
+    String filename = String(entry.name());
+    filename.toLowerCase();
+
+    if (!entry.isDirectory() && filename.endsWith(".wav")) {
+      wavFiles++;
+      Serial.print("║ ");
+      Serial.print(entry.name());
+
+      // Pad filename
+      int spaces = 30 - strlen(entry.name());
+      for (int i = 0; i < spaces; i++) Serial.print(" ");
+
+      Serial.print(" (");
+      uint32_t sizeKB = entry.size() / 1024;
+      if (sizeKB < 10) Serial.print("   ");
+      else if (sizeKB < 100) Serial.print("  ");
+      else if (sizeKB < 1000) Serial.print(" ");
+      Serial.print(sizeKB);
+      Serial.println(" KB)");
+    }
+
+    entry.close();
+  }
+
+  root.close();
+
+  Serial.println("╠════════════════════════════════════════════╣");
+  Serial.print("║ Total files: ");
+  Serial.print(totalFiles);
+  Serial.print(" | WAV files: ");
+  Serial.println(wavFiles);
+
+  if (wavFiles == 0) {
+    Serial.println("╠════════════════════════════════════════════╣");
+    Serial.println("║ ⚠️  NO WAV FILES FOUND!");
+    Serial.println("║    Player looks for: track1.wav, track2.wav, etc.");
+  }
+
+  Serial.println("╚════════════════════════════════════════════╝");
 }
 
 void showDebugInfo() {
