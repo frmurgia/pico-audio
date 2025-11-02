@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.6 (Simple filename format: 1.wav, 2.wav, etc.)
+// VERSION: 2.7 (Bulk read - fixed slow sample-by-sample reading)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -146,7 +146,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.6 (2025-11-02)             ║");
+  Serial.println("║  VERSION 2.7 (2025-11-02)             ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -685,27 +685,37 @@ void core1_fillBuffer(int playerIndex) {
   uint32_t bytesToRead = min(samplesToRead * 2, bytesRemaining);
   samplesToRead = bytesToRead / 2;
 
+  // Temporary buffer for bulk read (much faster than reading sample-by-sample!)
+  static int16_t tempBuffer[2048];
+
   // Read without holding mutex (only this core writes to buffer)
   if (player->numChannels == 1) {
-    // Mono
-    for (uint32_t i = 0; i < samplesToRead; i++) {
-      int16_t sample;
-      player->file.read((uint8_t*)&sample, 2);
-      player->buffer[writePos] = sample;
+    // Mono - read entire chunk at once
+    uint32_t bytesRead = player->file.read((uint8_t*)tempBuffer, bytesToRead);
+    uint32_t samplesRead = bytesRead / 2;
+
+    // Copy from temp buffer to circular buffer
+    for (uint32_t i = 0; i < samplesRead; i++) {
+      player->buffer[writePos] = tempBuffer[i];
       writePos = (writePos + 1) % BUFFER_SIZE;
     }
-    player->dataPosition += bytesToRead;
+    player->dataPosition += bytesRead;
+    samplesToRead = samplesRead;  // Update for mutex section below
   } else {
-    // Stereo - mix to mono
-    for (uint32_t i = 0; i < samplesToRead / 2; i++) {
-      int16_t left, right;
-      player->file.read((uint8_t*)&left, 2);
-      player->file.read((uint8_t*)&right, 2);
+    // Stereo - read entire chunk at once, then mix
+    uint32_t bytesRead = player->file.read((uint8_t*)tempBuffer, bytesToRead);
+    uint32_t samplesRead = bytesRead / 2;
+
+    // Mix stereo to mono
+    for (uint32_t i = 0; i < samplesRead / 2; i++) {
+      int16_t left = tempBuffer[i * 2];
+      int16_t right = tempBuffer[i * 2 + 1];
       int16_t mono = ((int32_t)left + (int32_t)right) / 2;
       player->buffer[writePos] = mono;
       writePos = (writePos + 1) % BUFFER_SIZE;
     }
-    player->dataPosition += bytesToRead;
+    player->dataPosition += bytesRead;
+    samplesToRead = samplesRead / 2;  // Mono samples written
   }
 
   // Update write position and available count (with mutex)
