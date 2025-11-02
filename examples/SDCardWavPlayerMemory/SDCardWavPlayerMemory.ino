@@ -1,5 +1,5 @@
 // SD Card WAV Player - MEMORY CACHED VERSION
-// VERSION: 2.1 (SDIO + auto-play)
+// VERSION: 2.2 (SDIO + auto-play + FULL DEBUG)
 // DATE: 2025-11-02
 //
 // Strategy: Load all WAV files to memory at startup, then play from RAM
@@ -102,14 +102,17 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - MEMORY CACHED        ║");
-  Serial.println("║  VERSION 2.1 (2025-11-02)             ║");
-  Serial.println("║  SDIO 4-bit + Auto-play + PSRAM       ║");
+  Serial.println("║  VERSION 2.2 (2025-11-02)             ║");
+  Serial.println("║  SDIO + Auto-play + FULL DEBUG        ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
 
   // Initialize SD card in SDIO 4-bit mode
   Serial.print("Initializing SD card (SDIO 4-bit)... ");
-  if (!SD.begin(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN)) {
+
+  bool sdOk = SD.begin(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN);
+
+  if (!sdOk) {
     Serial.println("FAILED!");
     Serial.println("Check SD card and SDIO wiring:");
     Serial.println("  CLK:  GP7");
@@ -120,7 +123,63 @@ void setup() {
     Serial.println("  DAT3: GP11");
     while (1) delay(1000);
   }
+
   Serial.println("OK (SDIO 4-bit @ 10-12 MB/s)");
+
+  // Show SD card info
+  uint64_t cardSize = SD.size();
+  Serial.print("SD card size: ");
+  Serial.print(cardSize / (1024 * 1024));
+  Serial.println(" MB");
+
+  // List ALL files on SD card
+  Serial.println();
+  Serial.println("Files on SD card:");
+  Serial.println("═════════════════════════════════");
+  File root = SD.open("/");
+  if (root) {
+    int totalFiles = 0;
+    int wavFiles = 0;
+    while (true) {
+      File entry = root.openNextFile();
+      if (!entry) break;
+
+      totalFiles++;
+      String filename = String(entry.name());
+      filename.toLowerCase();
+
+      Serial.print("  ");
+      Serial.print(entry.name());
+      Serial.print(" (");
+      Serial.print(entry.size() / 1024);
+      Serial.print(" KB)");
+
+      if (filename.endsWith(".wav")) {
+        Serial.print(" ← WAV file");
+        wavFiles++;
+      }
+      Serial.println();
+
+      entry.close();
+    }
+    root.close();
+
+    Serial.println("═════════════════════════════════");
+    Serial.print("Total files: ");
+    Serial.print(totalFiles);
+    Serial.print(" | WAV files: ");
+    Serial.println(wavFiles);
+
+    if (wavFiles == 0) {
+      Serial.println();
+      Serial.println("⚠️  NO WAV FILES FOUND!");
+      Serial.println("   Make sure your SD card has .wav files");
+      Serial.println("   Files must be named: track1.wav, track2.wav, etc.");
+    }
+  } else {
+    Serial.println("ERROR: Cannot open root directory!");
+  }
+  Serial.println();
 
   // Initialize audio
   AudioMemory(120);
@@ -269,73 +328,125 @@ void serviceAudioQueue(int playerIndex) {
 }
 
 void loadAllWavFiles() {
+  Serial.println("DEBUG: Opening root directory...");
   File root = SD.open("/");
   if (!root) {
-    Serial.println("ERROR: Cannot open root directory");
+    Serial.println("❌ ERROR: Cannot open root directory!");
+    Serial.println("   SD card may not be initialized properly");
     return;
   }
+  Serial.println("✓ Root directory opened");
 
   int fileCount = 0;
+  int filesScanned = 0;
   uint32_t totalMemoryUsed = 0;
+
+  Serial.println();
+  Serial.println("Scanning for WAV files...");
 
   while (fileCount < NUM_PLAYERS) {
     File entry = root.openNextFile();
-    if (!entry) break;  // No more files
-
-    if (!entry.isDirectory()) {
-      String filename = String(entry.name());
-      filename.toLowerCase();
-
-      if (filename.endsWith(".wav")) {
-        uint32_t fileSize = entry.size();
-
-        // Check if this file would exceed memory limit
-        if (totalMemoryUsed + fileSize > MAX_AUDIO_MEMORY) {
-          Serial.print("SKIPPING: ");
-          Serial.print(entry.name());
-          Serial.print(" (");
-          Serial.print(fileSize / 1024);
-          Serial.println(" KB - would exceed memory limit)");
-          entry.close();
-          continue;
-        }
-
-        Serial.print("Loading: ");
-        Serial.print(entry.name());
-        Serial.print(" (");
-        Serial.print(fileSize);
-        Serial.print(" bytes)... ");
-
-        if (loadWavToMemory(entry, &cachedFiles[fileCount])) {
-          strncpy(cachedFiles[fileCount].filename, entry.name(), 31);
-          cachedFiles[fileCount].filename[31] = '\0';
-          uint32_t audioBytes = cachedFiles[fileCount].numSamples * 2;
-          totalMemoryUsed += audioBytes;
-          Serial.print("OK (");
-          Serial.print(audioBytes / 1024);
-          Serial.println(" KB)");
-          fileCount++;
-        } else {
-          Serial.println("FAILED");
-        }
-      }
+    if (!entry) {
+      Serial.println("DEBUG: No more files in directory");
+      break;  // No more files
     }
+
+    filesScanned++;
+    Serial.print("DEBUG: Found file ");
+    Serial.print(filesScanned);
+    Serial.print(": ");
+    Serial.println(entry.name());
+
+    if (entry.isDirectory()) {
+      Serial.println("  → Skipped (directory)");
+      entry.close();
+      continue;
+    }
+
+    String filename = String(entry.name());
+    filename.toLowerCase();
+
+    if (!filename.endsWith(".wav")) {
+      Serial.print("  → Skipped (not .wav, extension: ");
+      int dotPos = filename.lastIndexOf('.');
+      if (dotPos >= 0) {
+        Serial.print(filename.substring(dotPos));
+      } else {
+        Serial.print("none");
+      }
+      Serial.println(")");
+      entry.close();
+      continue;
+    }
+
+    Serial.println("  → WAV file detected!");
+    uint32_t fileSize = entry.size();
+    Serial.print("  → Size: ");
+    Serial.print(fileSize);
+    Serial.print(" bytes (");
+    Serial.print(fileSize / 1024);
+    Serial.println(" KB)");
+
+    // Check if this file would exceed memory limit
+    if (totalMemoryUsed + fileSize > MAX_AUDIO_MEMORY) {
+      Serial.print("  ⚠️  SKIPPING: Would exceed memory limit (");
+      Serial.print(totalMemoryUsed / 1024);
+      Serial.print(" KB used + ");
+      Serial.print(fileSize / 1024);
+      Serial.print(" KB > ");
+      Serial.print(MAX_AUDIO_MEMORY / 1024);
+      Serial.println(" KB limit)");
+      entry.close();
+      continue;
+    }
+
+    Serial.print("▶ Loading track ");
+    Serial.println(fileCount + 1);
+
+    if (loadWavToMemory(entry, &cachedFiles[fileCount])) {
+      strncpy(cachedFiles[fileCount].filename, entry.name(), 31);
+      cachedFiles[fileCount].filename[31] = '\0';
+      uint32_t audioBytes = cachedFiles[fileCount].numSamples * 2;
+      totalMemoryUsed += audioBytes;
+
+      Serial.print("✓ Loaded successfully: ");
+      Serial.print(audioBytes / 1024);
+      Serial.print(" KB (");
+      Serial.print(cachedFiles[fileCount].numSamples);
+      Serial.print(" samples, ");
+      Serial.print(cachedFiles[fileCount].numChannels);
+      Serial.println(" channels)");
+
+      fileCount++;
+    } else {
+      Serial.println("❌ FAILED to load");
+    }
+
     entry.close();
   }
 
   root.close();
 
   Serial.println();
-  Serial.print("Loaded ");
+  Serial.println("═══════════════════════════════════════");
+  Serial.print("✓ Successfully loaded ");
   Serial.print(fileCount);
-  Serial.print(" files, using ");
+  Serial.print(" / ");
+  Serial.print(filesScanned);
+  Serial.println(" files scanned");
+  Serial.print("Memory used: ");
   Serial.print(totalMemoryUsed / 1024);
   Serial.print(" KB / ");
   Serial.print(MAX_AUDIO_MEMORY / 1024);
-  Serial.println(" KB available");
+  Serial.print(" KB (");
+  Serial.print((totalMemoryUsed * 100) / MAX_AUDIO_MEMORY);
+  Serial.println("%)");
+  Serial.println("═══════════════════════════════════════");
 }
 
 bool loadWavToMemory(File &file, CachedWavFile* cached) {
+  Serial.println("  DEBUG: loadWavToMemory starting...");
+
   cached->loaded = false;
   cached->audioData = NULL;
   cached->numSamples = 0;
@@ -343,65 +454,138 @@ bool loadWavToMemory(File &file, CachedWavFile* cached) {
   // Read WAV header
   WavHeader header;
   file.seek(0);
+  Serial.print("  DEBUG: Reading WAV header (");
+  Serial.print(sizeof(WavHeader));
+  Serial.println(" bytes)...");
 
-  if (file.read((uint8_t*)&header, sizeof(WavHeader)) != sizeof(WavHeader)) {
+  int headerBytesRead = file.read((uint8_t*)&header, sizeof(WavHeader));
+  Serial.print("  DEBUG: Read ");
+  Serial.print(headerBytesRead);
+  Serial.println(" bytes");
+
+  if (headerBytesRead != sizeof(WavHeader)) {
+    Serial.println("  ❌ ERROR: Failed to read complete WAV header");
     return false;
   }
 
   // Validate WAV format
+  Serial.print("  DEBUG: RIFF header: ");
+  Serial.write((uint8_t*)header.riff, 4);
+  Serial.println();
+  Serial.print("  DEBUG: WAVE header: ");
+  Serial.write((uint8_t*)header.wave, 4);
+  Serial.println();
+
   if (strncmp(header.riff, "RIFF", 4) != 0 ||
       strncmp(header.wave, "WAVE", 4) != 0) {
+    Serial.println("  ❌ ERROR: Not a valid WAV file (RIFF/WAVE header mismatch)");
     return false;
   }
 
+  Serial.print("  DEBUG: Audio format: ");
+  Serial.println(header.audioFormat);
   if (header.audioFormat != 1) {  // PCM
+    Serial.println("  ❌ ERROR: Not PCM format (only PCM supported)");
     return false;
   }
 
+  Serial.print("  DEBUG: Bits per sample: ");
+  Serial.println(header.bitsPerSample);
   if (header.bitsPerSample != 16) {
+    Serial.println("  ❌ ERROR: Not 16-bit (only 16-bit supported)");
     return false;
   }
+
+  Serial.print("  DEBUG: Channels: ");
+  Serial.println(header.numChannels);
+  Serial.print("  DEBUG: Sample rate: ");
+  Serial.println(header.sampleRate);
 
   cached->numChannels = header.numChannels;
 
   // Find data chunk
-  char chunkID[4];
+  Serial.println("  DEBUG: Searching for 'data' chunk...");
+  char chunkID[5] = {0};
   uint32_t chunkSize;
+  int chunksScanned = 0;
 
   while (file.available()) {
-    if (file.read((uint8_t*)chunkID, 4) != 4) break;
-    if (file.read((uint8_t*)&chunkSize, 4) != 4) break;
+    chunksScanned++;
+    if (file.read((uint8_t*)chunkID, 4) != 4) {
+      Serial.println("  ❌ ERROR: Failed to read chunk ID");
+      break;
+    }
+    if (file.read((uint8_t*)&chunkSize, 4) != 4) {
+      Serial.println("  ❌ ERROR: Failed to read chunk size");
+      break;
+    }
+
+    chunkID[4] = '\0';
+    Serial.print("  DEBUG: Found chunk '");
+    Serial.print(chunkID);
+    Serial.print("' size ");
+    Serial.print(chunkSize);
+    Serial.println(" bytes");
 
     if (strncmp(chunkID, "data", 4) == 0) {
+      Serial.println("  ✓ Found data chunk!");
+
       // Found data chunk - allocate memory
       uint32_t numSamples = chunkSize / 2;  // 16-bit samples
 
+      Serial.print("  DEBUG: Allocating ");
+      Serial.print(chunkSize);
+      Serial.print(" bytes (");
+      Serial.print(chunkSize / 1024);
+      Serial.println(" KB)...");
+
       cached->audioData = (int16_t*)malloc(chunkSize);
       if (cached->audioData == NULL) {
-        Serial.print("MALLOC FAILED for ");
-        Serial.print(chunkSize);
-        Serial.print(" bytes");
+        Serial.println("  ❌ ERROR: malloc() FAILED - out of memory!");
         return false;
       }
+      Serial.println("  ✓ Memory allocated");
 
       // Read all audio data to memory
+      Serial.println("  DEBUG: Reading audio data from SD...");
       uint32_t bytesRead = file.read((uint8_t*)cached->audioData, chunkSize);
+      Serial.print("  DEBUG: Read ");
+      Serial.print(bytesRead);
+      Serial.print(" / ");
+      Serial.print(chunkSize);
+      Serial.println(" bytes");
 
       if (bytesRead == chunkSize) {
         cached->numSamples = numSamples;
         cached->loaded = true;
+        Serial.println("  ✓ Audio data loaded successfully!");
+
+        // Calculate and print CRC for verification
+        uint32_t crc = 0;
+        for (uint32_t i = 0; i < min((uint32_t)1000, numSamples); i++) {
+          crc = crc * 31 + cached->audioData[i];
+        }
+        Serial.print("crc: ");
+        Serial.println(crc, HEX);
+
         return true;
       } else {
+        Serial.println("  ❌ ERROR: Failed to read complete audio data");
         free(cached->audioData);
         cached->audioData = NULL;
         return false;
       }
     } else {
       // Skip this chunk
+      Serial.print("  DEBUG: Skipping chunk, seeking +");
+      Serial.println(chunkSize);
       file.seek(file.position() + chunkSize);
     }
   }
 
+  Serial.print("  ❌ ERROR: 'data' chunk not found after scanning ");
+  Serial.print(chunksScanned);
+  Serial.println(" chunks");
   return false;
 }
 
