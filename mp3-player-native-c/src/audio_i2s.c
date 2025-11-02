@@ -14,7 +14,7 @@
 
 // I2S state
 static PIO i2s_pio = pio0;
-static uint i2s_sm = 0;
+static unsigned int i2s_sm = 0;
 static int dma_channel = -1;
 static int dma_channel_alt = -1;  // Ping-pong DMA
 
@@ -36,7 +36,7 @@ void audio_i2s_init(unsigned int bck_pin, unsigned int lrck_pin, unsigned int di
            bck_pin, lrck_pin, din_pin, sample_rate);
 
     // Load PIO program
-    uint offset = pio_add_program(i2s_pio, &i2s_output_program);
+    unsigned int offset = pio_add_program(i2s_pio, &i2s_output_program);
     printf("I2S: PIO program loaded at offset %d\n", offset);
 
     // Initialize PIO state machine

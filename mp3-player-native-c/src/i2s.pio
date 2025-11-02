@@ -33,8 +33,8 @@ right_bit_loop:
 .wrap
 
 % c-sdk {
-static inline void i2s_output_program_init(PIO pio, uint sm, uint offset,
-                                           uint data_pin, uint clock_pin_base,
+static inline void i2s_output_program_init(PIO pio, unsigned int sm, unsigned int offset,
+                                           unsigned int data_pin, unsigned int clock_pin_base,
                                            uint32_t sample_rate) {
     // Configure pins
     pio_gpio_init(pio, data_pin);
