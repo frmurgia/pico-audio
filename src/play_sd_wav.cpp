@@ -98,14 +98,33 @@ void AudioPlaySdWav::update(void)
 	unsigned int i, n;
 	audio_block_t *left, *right;
 
+	// Debug counter
+	static uint32_t updateCount = 0;
+	bool shouldDebug = ((updateCount++ % 200) == 0);
+
+	if (shouldDebug && state != STATE_STOP) {
+		Serial.print("🔧 update() state=");
+		Serial.print(state);
+		Serial.print(" buflen=");
+		Serial.print(buffer_length);
+		Serial.print(" bufoff=");
+		Serial.print(buffer_offset);
+		Serial.print(" datalen=");
+		Serial.println(data_length);
+	}
+
 	// Only update if we're playing
 	if (state == STATE_STOP) return;
 
 	// Allocate audio blocks
 	left = allocate();
-	if (left == NULL) return;
+	if (left == NULL) {
+		if (shouldDebug) Serial.println("⚠️  Cannot allocate left block");
+		return;
+	}
 	right = allocate();
 	if (right == NULL) {
+		if (shouldDebug) Serial.println("⚠️  Cannot allocate right block");
 		release(left);
 		return;
 	}
@@ -125,6 +144,11 @@ void AudioPlaySdWav::update(void)
 		case STATE_PARSE1:
 			// Read 512 byte chunks for header
 			buffer_length = wavfile.read(buffer, 512);
+			if (shouldDebug) {
+				Serial.print("  PARSE1: Read ");
+				Serial.print(buffer_length);
+				Serial.println(" bytes");
+			}
 			if (buffer_length == 0) goto end;
 			buffer_offset = 0;
 			state = STATE_PARSE2;
@@ -225,18 +249,43 @@ bool AudioPlaySdWav::parse_format(void)
 	uint16_t bits;
 	uint16_t block_align;
 
+	static bool debugPrinted = false;
+
 	while (state != STATE_PLAY) {
-		if (buffer_offset >= buffer_length) return false;
+		if (buffer_offset >= buffer_length) {
+			if (!debugPrinted) {
+				Serial.println("  parse_format: buffer_offset >= buffer_length, returning false");
+				debugPrinted = true;
+			}
+			return false;
+		}
 
 		((uint8_t *)header)[header_offset++] = buffer[buffer_offset++];
+
+		if (header_offset == 1 && !debugPrinted) {
+			Serial.println("  parse_format: Starting to parse header");
+		}
 
 		if (header_offset < 16) continue;
 
 		// Parse WAV header (simplified)
 		if (header_offset == 16) {
 			// Check RIFF header
-			if (header[0] != 0x46464952) goto abort;  // "RIFF"
-			if (header[2] != 0x45564157) goto abort;  // "WAVE"
+			if (!debugPrinted) {
+				Serial.print("  Header[0]=0x");
+				Serial.print(header[0], HEX);
+				Serial.print(" Header[2]=0x");
+				Serial.println(header[2], HEX);
+			}
+			if (header[0] != 0x46464952) {
+				Serial.println("❌ Not a RIFF file!");
+				goto abort;  // "RIFF"
+			}
+			if (header[2] != 0x45564157) {
+				Serial.println("❌ Not a WAVE file!");
+				goto abort;  // "WAVE"
+			}
+			if (!debugPrinted) Serial.println("✓ RIFF/WAVE header OK");
 			header_offset++;
 		}
 
