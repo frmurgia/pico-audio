@@ -21,8 +21,7 @@ static sd_sdio_if_t sdio_if = {
     .baud_rate = 20 * 1000 * 1000,  // 20 MHz
     .SDIO_PIO = pio1,
     .DMA_IRQ_num = DMA_IRQ_1,
-    .use_exclusive_DMA_IRQ_handler = true,
-    .no_miso_gpio_pull_up = false
+    .use_exclusive_DMA_IRQ_handler = true
 };
 
 static sd_card_t sd_card = {
