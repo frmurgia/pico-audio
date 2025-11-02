@@ -24,28 +24,33 @@ if(NOT EXISTS ${FATFS_DIR})
                         "  git clone https://github.com/carlk3/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico.git\n")
 endif()
 
-# FatFS sources
+# FatFS sources (correct paths for ff15)
 add_library(FatFs_SPI INTERFACE)
 target_sources(FatFs_SPI INTERFACE
-    ${FATFS_DIR}/src/ff.c
-    ${FATFS_DIR}/src/ffsystem.c
-    ${FATFS_DIR}/src/ffunicode.c
+    ${FATFS_DIR}/src/ff15/source/ff.c
+    ${FATFS_DIR}/src/ff15/source/ffsystem.c
+    ${FATFS_DIR}/src/ff15/source/ffunicode.c
 )
 target_include_directories(FatFs_SPI INTERFACE
-    ${FATFS_DIR}/src
+    ${FATFS_DIR}/src/ff15/source
 )
 
-# no-OS-FatFS SDIO driver
+# no-OS-FatFS SDIO driver (complete source list)
 add_library(no_OS_FatFS INTERFACE)
 target_sources(no_OS_FatFS INTERFACE
-    ${FATFS_DIR}/src/sd_driver/SDIO/SdioCard.c
-    ${FATFS_DIR}/src/sd_driver/SDIO/rp2040_sdio.pio.c
     ${FATFS_DIR}/src/sd_driver/sd_card.c
+    ${FATFS_DIR}/src/sd_driver/SDIO/sd_card_sdio.c
+    ${FATFS_DIR}/src/sd_driver/SDIO/rp2040_sdio.pio.c
     ${FATFS_DIR}/src/sd_driver/my_debug.c
+    ${FATFS_DIR}/src/diskio/diskio.c
+    ${FATFS_DIR}/src/diskio/timeutils.c
 )
 target_include_directories(no_OS_FatFS INTERFACE
+    ${FATFS_DIR}/src
     ${FATFS_DIR}/src/sd_driver
     ${FATFS_DIR}/src/sd_driver/SDIO
+    ${FATFS_DIR}/src/diskio
+    ${FATFS_DIR}/src/ff15/source
 )
 
 # Main executable
