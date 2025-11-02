@@ -22,7 +22,7 @@ typedef void (*audio_i2s_callback_t)(int16_t* buffer, uint32_t num_samples, void
  * @param din_pin Data input pin
  * @param sample_rate Sample rate in Hz (e.g. 44100)
  */
-void audio_i2s_init(uint bck_pin, uint lrck_pin, uint din_pin, uint32_t sample_rate);
+void audio_i2s_init(unsigned int bck_pin, unsigned int lrck_pin, unsigned int din_pin, uint32_t sample_rate);
 
 /**
  * Start I2S DMA streaming

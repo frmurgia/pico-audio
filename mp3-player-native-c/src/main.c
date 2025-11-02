@@ -375,7 +375,7 @@ void list_mp3_files(void) {
         if (len > 4) {
             const char* ext = fno.fname + len - 4;
             if (strcasecmp(ext, ".mp3") == 0) {
-                printf("  %s (%lu KB)\n", fno.fname, fno.fsize / 1024);
+                printf("  %s (%llu KB)\n", fno.fname, (unsigned long long)(fno.fsize / 1024));
                 count++;
             }
         }
