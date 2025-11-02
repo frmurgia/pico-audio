@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.15 (Add 'a' command to load all 10 tracks simultaneously)
+// VERSION: 2.16 (Fix: Add fileOpen flag - File object bool check unreliable)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -75,6 +75,7 @@ struct WavHeader {
 struct WavPlayer {
   // File handle - ONLY accessed by Core1
   File file;
+  volatile bool fileOpen;  // Track if file is open (File object bool check unreliable)
 
   // Audio queue - ONLY accessed by Core0
   AudioPlayQueue queue;
@@ -147,7 +148,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.15 (2025-11-02)            ║");
+  Serial.println("║  VERSION 2.16 (2025-11-02)            ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -179,6 +180,7 @@ void setup() {
 
     players[i].playing = false;
     players[i].stopRequested = false;
+    players[i].fileOpen = false;
     players[i].dataSize = 0;
     players[i].dataPosition = 0;
     players[i].underrunCount = 0;
@@ -533,13 +535,14 @@ void core1_servicePlayer(int playerIndex) {
   WavPlayer* player = &players[playerIndex];
 
   // Check if we should start this player
-  if (player->playing && !player->file && !player->stopRequested) {
+  if (player->playing && !player->fileOpen && !player->stopRequested) {
     core1_openFile(playerIndex);
   }
 
   // Check if stop requested
-  if (player->stopRequested && player->file) {
+  if (player->stopRequested && player->fileOpen) {
     player->file.close();
+    player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
     player->stopRequested = false;
@@ -548,7 +551,7 @@ void core1_servicePlayer(int playerIndex) {
   }
 
   // Fill buffer if playing
-  if (player->playing && player->file) {
+  if (player->playing && player->fileOpen) {
     core1_fillBuffer(playerIndex);
   }
 }
@@ -562,6 +565,7 @@ void core1_openFile(int playerIndex) {
     // File open failed - print error (critical for debugging)
     Serial.print("❌ ERROR: Cannot open file: ");
     Serial.println(player->filename);
+    player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
     mutex_exit(&player->mutex);
@@ -575,6 +579,7 @@ void core1_openFile(int playerIndex) {
     Serial.print("❌ ERROR: Cannot read WAV header: ");
     Serial.println(player->filename);
     player->file.close();
+    player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
     mutex_exit(&player->mutex);
@@ -595,6 +600,7 @@ void core1_openFile(int playerIndex) {
     Serial.print(header.bitsPerSample);
     Serial.println(")");
     player->file.close();
+    player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
     mutex_exit(&player->mutex);
@@ -626,6 +632,7 @@ void core1_openFile(int playerIndex) {
     Serial.print("❌ ERROR: No data chunk in WAV file: ");
     Serial.println(player->filename);
     player->file.close();
+    player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
     mutex_exit(&player->mutex);
@@ -633,6 +640,7 @@ void core1_openFile(int playerIndex) {
   }
 
   // File ready to play successfully!
+  player->fileOpen = true;  // CRITICAL: Mark file as open
   Serial.print("✓ Player ");
   Serial.print(playerIndex + 1);
   Serial.print(": ");
@@ -663,6 +671,7 @@ void core1_fillBuffer(int playerIndex) {
   if (bytesRemaining == 0) {
     // End of file - stop silently (Core0 will notice via stats)
     player->file.close();
+    player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
     mutex_exit(&player->mutex);
