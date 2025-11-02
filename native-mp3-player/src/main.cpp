@@ -33,10 +33,10 @@
 // CONFIGURATION
 //=============================================================================
 
-// SDIO pins
-#define SD_CLK_PIN  7
-#define SD_CMD_PIN  6
-#define SD_DAT0_PIN 8
+// SDIO pins - CONFIGURAZIONE CUSTOM
+#define SD_CLK_PIN  6   // CLK
+#define SD_CMD_PIN  11  // CMD
+#define SD_DAT0_PIN 0   // D0 (D1=1, D2=2, D3=3 consecutivi)
 
 // I2S pins (handled by pico-audio library)
 // BCK=GP20, LRCK=GP21, DIN=GP22

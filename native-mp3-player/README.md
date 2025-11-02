@@ -29,12 +29,12 @@ GND  -> GND
 ### SD Card SDIO
 ```
 SD Pin -> Pico Pin
-CLK    -> GP7
-CMD    -> GP6
-DAT0   -> GP8  ⚠️ Consecutivi
-DAT1   -> GP9
-DAT2   -> GP10
-DAT3   -> GP11
+CLK    -> GP6
+CMD    -> GP11
+DAT0   -> GP0  ⚠️ Consecutivi
+DAT1   -> GP1
+DAT2   -> GP2
+DAT3   -> GP3
 VCC    -> 3.3V
 GND    -> GND
 ```
