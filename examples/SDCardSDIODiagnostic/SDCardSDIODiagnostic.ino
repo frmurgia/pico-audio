@@ -4,13 +4,13 @@
 //
 // Tests SDIO functionality with detailed debugging
 //
-// SDIO Pin Configuration:
-// - CLK  -> GP6
-// - CMD  -> GP7
-// - DAT0 -> GP0
-// - DAT1 -> GP1
-// - DAT2 -> GP2
-// - DAT3 -> GP3
+// SDIO Pin Configuration (VERIFIED WORKING):
+// - CLK  -> GP7
+// - CMD  -> GP6
+// - DAT0 -> GP8
+// - DAT1 -> GP9
+// - DAT2 -> GP10
+// - DAT3 -> GP11
 //
 // SPI Pin Configuration (for comparison):
 // - CS   -> GP3
@@ -26,10 +26,10 @@
 #include <SPI.h>
 #include <hardware/gpio.h>
 
-// SDIO Pin Configuration
-#define SDIO_CLK_PIN  6
-#define SDIO_CMD_PIN  7
-#define SDIO_DAT0_PIN 0  // DAT1=1, DAT2=2, DAT3=3 (consecutive!)
+// SDIO Pin Configuration (VERIFIED WORKING)
+#define SDIO_CLK_PIN  7
+#define SDIO_CMD_PIN  6
+#define SDIO_DAT0_PIN 8  // DAT1=9, DAT2=10, DAT3=11 (consecutive!)
 
 // SPI Pin Configuration
 #define SPI_CS_PIN   3
