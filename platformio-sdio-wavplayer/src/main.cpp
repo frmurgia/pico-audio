@@ -18,12 +18,12 @@
 // - GND               -> GND
 //
 // SDIO Pin Configuration (6 pins required):
-// - SD_CLK  -> GP10 (clock, any GPIO)
-// - SD_CMD  -> GP11 (command, any GPIO)
-// - SD_DAT0 -> GP12 (data bit 0, must be base for consecutive pins)
-// - SD_DAT1 -> GP13 (data bit 1, must be DAT0+1)
-// - SD_DAT2 -> GP14 (data bit 2, must be DAT0+2)
-// - SD_DAT3 -> GP15 (data bit 3, must be DAT0+3)
+// - SD_CLK  -> GP6  (clock, any GPIO)
+// - SD_CMD  -> GP7  (command, any GPIO)
+// - SD_DAT0 -> GP0  (data bit 0, must be base for consecutive pins)
+// - SD_DAT1 -> GP1  (data bit 1, must be DAT0+1)
+// - SD_DAT2 -> GP2  (data bit 2, must be DAT0+2)
+// - SD_DAT3 -> GP3  (data bit 3, must be DAT0+3)
 //
 // ⚠️ IMPORTANT: DAT0-3 MUST be on consecutive GPIO pins!
 //
@@ -45,9 +45,9 @@
 #include <pico/mutex.h>
 
 // SDIO Pin Configuration for RP2350
-#define SD_CLK_PIN  10
-#define SD_CMD_PIN  11
-#define SD_DAT0_PIN 12  // DAT1=13, DAT2=14, DAT3=15 (consecutive!)
+#define SD_CLK_PIN  6
+#define SD_CMD_PIN  7
+#define SD_DAT0_PIN 0  // DAT1=1, DAT2=2, DAT3=3 (consecutive!)
 
 // Number of simultaneous players
 #define NUM_PLAYERS 10
@@ -437,12 +437,12 @@ void core1_main() {
   } else {
     Serial.println("FAILED");
     Serial.println("Core1: Check SDIO wiring:");
-    Serial.println("  CLK:  GP10");
-    Serial.println("  CMD:  GP11");
-    Serial.println("  DAT0: GP12");
-    Serial.println("  DAT1: GP13");
-    Serial.println("  DAT2: GP14");
-    Serial.println("  DAT3: GP15");
+    Serial.println("  CLK:  GP6");
+    Serial.println("  CMD:  GP7");
+    Serial.println("  DAT0: GP0");
+    Serial.println("  DAT1: GP1");
+    Serial.println("  DAT2: GP2");
+    Serial.println("  DAT3: GP3");
     sdInitialized = false;
     // Don't hang - let Core0 detect failure
   }
