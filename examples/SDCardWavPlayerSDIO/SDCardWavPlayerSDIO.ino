@@ -1,6 +1,6 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.3 (Fixed race condition in SD init)
-// DATE: 2025-11-01
+// VERSION: 2.4 (Comprehensive file open debug)
+// DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
 // SDIO bandwidth: ~10-12 MB/s (vs SPI ~1-2 MB/s)
@@ -146,20 +146,20 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.3 (2025-11-01)             ║");
+  Serial.println("║  VERSION 2.4 (2025-11-02)             ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
   Serial.println("Core0: Audio processing");
   Serial.println("Core1: SD card operations (SDIO)");
   Serial.println();
-  Serial.println("SDIO Pins:");
-  Serial.println("  CLK:  GP10");
-  Serial.println("  CMD:  GP11");
-  Serial.println("  DAT0: GP12");
-  Serial.println("  DAT1: GP13");
-  Serial.println("  DAT2: GP14");
-  Serial.println("  DAT3: GP15");
+  Serial.println("SDIO Pins (VERIFIED WORKING):");
+  Serial.println("  CLK:  GP7");
+  Serial.println("  CMD:  GP6");
+  Serial.println("  DAT0: GP8");
+  Serial.println("  DAT1: GP9");
+  Serial.println("  DAT2: GP10");
+  Serial.println("  DAT3: GP11");
   Serial.println();
 
   // Initialize audio
@@ -437,12 +437,12 @@ void core1_main() {
   } else {
     Serial.println("FAILED");
     Serial.println("Core1: Check SDIO wiring:");
-    Serial.println("  CLK:  GP10");
-    Serial.println("  CMD:  GP11");
-    Serial.println("  DAT0: GP12");
-    Serial.println("  DAT1: GP13");
-    Serial.println("  DAT2: GP14");
-    Serial.println("  DAT3: GP15");
+    Serial.println("  CLK:  GP7");
+    Serial.println("  CMD:  GP6");
+    Serial.println("  DAT0: GP8");
+    Serial.println("  DAT1: GP9");
+    Serial.println("  DAT2: GP10");
+    Serial.println("  DAT3: GP11");
     sdInitialized = false;
     // Don't hang - let Core0 detect failure
   }
@@ -487,15 +487,24 @@ void core1_openFile(int playerIndex) {
   // Open file
   player->file = SD.open(player->filename, FILE_READ);
   if (!player->file) {
+    Serial.print("ERROR: Cannot open file: ");
+    Serial.println(player->filename);
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
     mutex_exit(&player->mutex);
     return;
   }
 
+  Serial.print("DEBUG: Opened ");
+  Serial.print(player->filename);
+  Serial.print(" (");
+  Serial.print(player->file.size());
+  Serial.println(" bytes)");
+
   // Read WAV header
   WavHeader header;
   if (player->file.read((uint8_t*)&header, sizeof(WavHeader)) != sizeof(WavHeader)) {
+    Serial.println("ERROR: Cannot read WAV header");
     player->file.close();
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
@@ -508,12 +517,33 @@ void core1_openFile(int playerIndex) {
       strncmp(header.wave, "WAVE", 4) != 0 ||
       header.audioFormat != 1 ||  // PCM
       header.bitsPerSample != 16) {
+    Serial.print("ERROR: Invalid WAV format - ");
+    if (strncmp(header.riff, "RIFF", 4) != 0) Serial.println("Not RIFF");
+    else if (strncmp(header.wave, "WAVE", 4) != 0) Serial.println("Not WAVE");
+    else if (header.audioFormat != 1) {
+      Serial.print("Not PCM (format=");
+      Serial.print(header.audioFormat);
+      Serial.println(")");
+    }
+    else if (header.bitsPerSample != 16) {
+      Serial.print("Not 16-bit (bits=");
+      Serial.print(header.bitsPerSample);
+      Serial.println(")");
+    }
     player->file.close();
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
     mutex_exit(&player->mutex);
     return;
   }
+
+  Serial.print("DEBUG: WAV format OK - ");
+  Serial.print(header.numChannels);
+  Serial.print(" ch, ");
+  Serial.print(header.sampleRate);
+  Serial.print(" Hz, ");
+  Serial.print(header.bitsPerSample);
+  Serial.println(" bit");
 
   player->numChannels = header.numChannels;
 
@@ -522,6 +552,7 @@ void core1_openFile(int playerIndex) {
   uint32_t chunkSize;
   bool foundData = false;
 
+  Serial.println("DEBUG: Scanning for data chunk...");
   while (player->file.available()) {
     if (player->file.read((uint8_t*)chunkID, 4) != 4) break;
     if (player->file.read((uint8_t*)&chunkSize, 4) != 4) break;
@@ -529,18 +560,32 @@ void core1_openFile(int playerIndex) {
     if (strncmp(chunkID, "data", 4) == 0) {
       player->dataSize = chunkSize;
       foundData = true;
+      Serial.print("DEBUG: Found data chunk - ");
+      Serial.print(chunkSize);
+      Serial.print(" bytes (");
+      Serial.print(chunkSize / 1024);
+      Serial.println(" KB)");
       break;
     } else {
+      Serial.print("DEBUG: Skipping chunk '");
+      Serial.write((uint8_t*)chunkID, 4);
+      Serial.print("' (");
+      Serial.print(chunkSize);
+      Serial.println(" bytes)");
       player->file.seek(player->file.position() + chunkSize);
     }
   }
 
   if (!foundData) {
+    Serial.println("ERROR: No data chunk found in WAV file!");
     player->file.close();
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
     mutex_exit(&player->mutex);
+    return;
   }
+
+  Serial.println("✓ File ready to play!");
 }
 
 void core1_fillBuffer(int playerIndex) {
