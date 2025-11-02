@@ -31,7 +31,7 @@ static void* user_callback_data = NULL;
 // Forward declarations
 static void dma_irq_handler(void);
 
-void audio_i2s_init(uint bck_pin, uint lrck_pin, uint din_pin, uint32_t sample_rate) {
+void audio_i2s_init(unsigned int bck_pin, unsigned int lrck_pin, unsigned int din_pin, uint32_t sample_rate) {
     printf("I2S: Initializing (BCK=%d, LRCK=%d, DIN=%d, SR=%lu)\n",
            bck_pin, lrck_pin, din_pin, sample_rate);
 
