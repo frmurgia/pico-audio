@@ -17,13 +17,13 @@
 // - VCC               -> 3.3V
 // - GND               -> GND
 //
-// SDIO Pin Configuration (6 pins required):
-// - SD_CLK  -> GP10 (clock, any GPIO)
-// - SD_CMD  -> GP11 (command, any GPIO)
-// - SD_DAT0 -> GP12 (data bit 0, must be base for consecutive pins)
-// - SD_DAT1 -> GP13 (data bit 1, must be DAT0+1)
-// - SD_DAT2 -> GP14 (data bit 2, must be DAT0+2)
-// - SD_DAT3 -> GP15 (data bit 3, must be DAT0+3)
+// SDIO Pin Configuration (6 pins required - VERIFIED WORKING):
+// - SD_CLK  -> GP7  (clock, any GPIO)
+// - SD_CMD  -> GP6  (command, any GPIO)
+// - SD_DAT0 -> GP8  (data bit 0, must be base for consecutive pins)
+// - SD_DAT1 -> GP9  (data bit 1, must be DAT0+1)
+// - SD_DAT2 -> GP10 (data bit 2, must be DAT0+2)
+// - SD_DAT3 -> GP11 (data bit 3, must be DAT0+3)
 //
 // ⚠️ IMPORTANT: DAT0-3 MUST be on consecutive GPIO pins!
 //
@@ -44,10 +44,10 @@
 #include <pico/multicore.h>
 #include <pico/mutex.h>
 
-// SDIO Pin Configuration for RP2350
-#define SD_CLK_PIN  10
-#define SD_CMD_PIN  11
-#define SD_DAT0_PIN 12  // DAT1=13, DAT2=14, DAT3=15 (consecutive!)
+// SDIO Pin Configuration for RP2350 (VERIFIED WORKING)
+#define SD_CLK_PIN  7
+#define SD_CMD_PIN  6
+#define SD_DAT0_PIN 8  // DAT1=9, DAT2=10, DAT3=11 (consecutive!)
 
 // Number of simultaneous players
 #define NUM_PLAYERS 10
