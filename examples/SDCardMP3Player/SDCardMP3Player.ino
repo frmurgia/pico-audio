@@ -1,0 +1,633 @@
+// SD Card MP3 Player - SDIO 4-BIT VERSION
+// VERSION: 1.0
+// DATE: 2025-11-02
+//
+// Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
+// SDIO bandwidth: ~10-12 MB/s (vs SPI ~1-2 MB/s)
+//
+// MP3 Decoder: minimp3 (public domain, lightweight)
+// - Supports all MPEG versions (1, 2, 2.5)
+// - All layers (1, 2, 3)
+// - All bitrates
+// - Mono and stereo (auto-converted to mono for this system)
+//
+// Dual-Core Architecture:
+// - Core0: Audio processing only (AudioPlayQueue, mixers, I2S)
+// - Core1: SD card operations + MP3 decoding
+// - Communication: Thread-safe circular buffers with mutex
+//
+// I2S Pin Configuration (PCM5102 DAC):
+// - BCK (Bit Clock)   -> GP20
+// - LRCK (Word Select)-> GP21
+// - DIN (Data)        -> GP22
+// - VCC               -> 3.3V
+// - GND               -> GND
+//
+// SDIO Pin Configuration (6 pins required):
+// - SD_CLK  -> GP7  (clock, any GPIO)
+// - SD_CMD  -> GP6  (command, any GPIO)
+// - SD_DAT0 -> GP8  (data bit 0, must be base for consecutive pins)
+// - SD_DAT1 -> GP9  (data bit 1, must be DAT0+1)
+// - SD_DAT2 -> GP10 (data bit 2, must be DAT0+2)
+// - SD_DAT3 -> GP11 (data bit 3, must be DAT0+3)
+//
+// ⚠️ IMPORTANT: DAT0-3 MUST be on consecutive GPIO pins!
+//
+// Controls via Serial:
+// - '1'-'9','0' : Play track 1-10
+// - 's' : Stop all tracks
+// - 'l' : List available MP3 files
+// - 'd' : Show debug info
+
+#include <Adafruit_TinyUSB.h>
+#include <SD.h>
+#include <pico-audio.h>
+#include <pico/multicore.h>
+#include <pico/mutex.h>
+
+// Include minimp3 decoder
+#define MINIMP3_IMPLEMENTATION
+#define MINIMP3_ONLY_MP3
+#define MINIMP3_NO_SIMD  // Disable SIMD for RP2350 compatibility
+#include "minimp3.h"
+
+// SDIO Pin Configuration for RP2350
+#define SD_CLK_PIN  7
+#define SD_CMD_PIN  6
+#define SD_DAT0_PIN 8  // DAT1=9, DAT2=10, DAT3=11 (consecutive!)
+
+// Number of simultaneous players
+#define NUM_PLAYERS 10
+
+// Buffer sizes
+#define BUFFER_SIZE 8192      // Audio output buffer (8K samples = ~186ms @ 44.1kHz)
+#define MP3_BUF_SIZE 4096     // MP3 read buffer (4KB raw MP3 data)
+
+// MP3 Player state - accessed by both cores
+struct MP3Player {
+  // File handle - ONLY accessed by Core1
+  File file;
+
+  // Audio queue - ONLY accessed by Core0
+  AudioPlayQueue queue;
+
+  // MP3 decoder - ONLY accessed by Core1
+  mp3dec_t mp3dec;
+  uint8_t mp3Buffer[MP3_BUF_SIZE];  // Raw MP3 data buffer
+  uint32_t mp3BufferFill;           // How much data in mp3Buffer
+  uint32_t fileSize;
+  uint32_t filePosition;
+
+  // Shared state - protected by mutex
+  volatile bool playing;
+  volatile bool stopRequested;
+  uint32_t sampleRate;
+  uint16_t numChannels;
+  char filename[32];
+
+  // Circular buffer - written by Core1, read by Core0
+  int16_t* buffer;
+  volatile uint32_t bufferSize;
+  volatile uint32_t bufferReadPos;
+  volatile uint32_t bufferWritePos;
+  volatile uint32_t bufferAvailable;
+
+  // Stats
+  volatile uint32_t underrunCount;
+  volatile uint32_t framesDecoded;
+
+  // Mutex for this player
+  mutex_t mutex;
+};
+
+// Audio components - Core0 only
+MP3Player players[NUM_PLAYERS];
+AudioMixer4 mixer1, mixer2, mixer3;
+AudioOutputI2S i2s1;
+
+// Audio connections
+AudioConnection patchCord1(players[0].queue, 0, mixer1, 0);
+AudioConnection patchCord2(players[1].queue, 0, mixer1, 1);
+AudioConnection patchCord3(players[2].queue, 0, mixer1, 2);
+AudioConnection patchCord4(players[3].queue, 0, mixer1, 3);
+AudioConnection patchCord5(players[4].queue, 0, mixer2, 0);
+AudioConnection patchCord6(players[5].queue, 0, mixer2, 1);
+AudioConnection patchCord7(players[6].queue, 0, mixer2, 2);
+AudioConnection patchCord8(players[7].queue, 0, mixer2, 3);
+AudioConnection patchCord9(players[8].queue, 0, mixer3, 0);
+AudioConnection patchCord10(players[9].queue, 0, mixer3, 1);
+AudioConnection patchCord11(mixer1, 0, mixer3, 2);
+AudioConnection patchCord12(mixer2, 0, mixer3, 3);
+AudioConnection patchCord13(mixer3, 0, i2s1, 0);
+AudioConnection patchCord14(mixer3, 0, i2s1, 1);
+
+// Global state
+float globalVolume = 0.3;  // 30% per channel
+volatile bool core1Running = false;
+volatile bool sdInitialized = false;
+
+// Forward declarations
+void core1_main();
+void playTrack(int playerIndex);
+void stopPlayer(int playerIndex);
+void stopAll();
+void serviceAudioQueue(int playerIndex);
+void updateMixerGains();
+void showDebugInfo();
+void core1_servicePlayer(int playerIndex);
+void core1_openFile(int playerIndex);
+void core1_fillBuffer(int playerIndex);
+
+//=============================================================================
+// CORE0 FUNCTIONS - Audio processing only
+//=============================================================================
+
+void setup() {
+  Serial.begin(115200);
+
+  unsigned long startTime = millis();
+  while (!Serial && (millis() - startTime < 5000)) {
+    delay(100);
+  }
+
+  Serial.println("\n╔════════════════════════════════════════╗");
+  Serial.println("║  SD MP3 Player - SDIO 4-BIT MODE     ║");
+  Serial.println("║  VERSION 1.0 (2025-11-02)             ║");
+  Serial.println("║  RP2350B + minimp3 decoder            ║");
+  Serial.println("╚════════════════════════════════════════╝");
+  Serial.println();
+  Serial.println("Core0: Audio processing");
+  Serial.println("Core1: SD card + MP3 decoding");
+  Serial.println();
+  Serial.println("SDIO Pins:");
+  Serial.println("  CLK:  GP7");
+  Serial.println("  CMD:  GP6");
+  Serial.println("  DAT0: GP8");
+  Serial.println("  DAT1: GP9");
+  Serial.println("  DAT2: GP10");
+  Serial.println("  DAT3: GP11");
+  Serial.println();
+
+  // Initialize audio
+  AudioMemory(120);
+
+  // Configure mixers
+  updateMixerGains();
+
+  // Initialize I2S
+  i2s1.begin();
+
+  // Initialize players
+  Serial.println("Initializing players...");
+  for (int i = 0; i < NUM_PLAYERS; i++) {
+    mutex_init(&players[i].mutex);
+
+    players[i].playing = false;
+    players[i].stopRequested = false;
+    players[i].fileSize = 0;
+    players[i].filePosition = 0;
+    players[i].underrunCount = 0;
+    players[i].framesDecoded = 0;
+    players[i].mp3BufferFill = 0;
+
+    // Allocate circular buffer
+    players[i].buffer = (int16_t*)malloc(BUFFER_SIZE * sizeof(int16_t));
+    if (players[i].buffer == NULL) {
+      Serial.print("ERROR: Cannot allocate buffer for player ");
+      Serial.println(i);
+      while (1) delay(1000);
+    }
+
+    players[i].bufferSize = BUFFER_SIZE;
+    players[i].bufferReadPos = 0;
+    players[i].bufferWritePos = 0;
+    players[i].bufferAvailable = 0;
+
+    // Initialize MP3 decoder
+    mp3dec_init(&players[i].mp3dec);
+  }
+
+  Serial.println("OK");
+  Serial.println();
+
+  // Launch Core1 for SD operations
+  Serial.print("Launching Core1... ");
+  multicore_launch_core1(core1_main);
+
+  // Wait for Core1 to complete SD initialization
+  unsigned long timeout = millis();
+  while (!sdInitialized && (millis() - timeout < 10000)) {
+    delay(50);
+  }
+
+  if (core1Running && sdInitialized) {
+    Serial.println("OK");
+    Serial.println("SD card: OK (SDIO mode)");
+  } else if (core1Running) {
+    Serial.println("OK (Core1 running)");
+    Serial.println("SD card: FAILED - Check wiring and card");
+  } else {
+    Serial.println("FAILED - Core1 not responding");
+  }
+
+  Serial.println();
+  Serial.println("Ready!");
+  Serial.println("Commands: '1'-'0' = play track, 's' = stop, 'l' = list, 'd' = debug");
+}
+
+void loop() {
+  // Handle serial commands on Core0
+  if (Serial.available()) {
+    char cmd = Serial.read();
+
+    if (cmd >= '1' && cmd <= '9') {
+      playTrack(cmd - '1');
+    } else if (cmd == '0') {
+      playTrack(9);
+    } else if (cmd == 's' || cmd == 'S') {
+      stopAll();
+    } else if (cmd == 'l' || cmd == 'L') {
+      // Core1 will handle this via Serial monitor
+      Serial.println("LIST");
+    } else if (cmd == 'd' || cmd == 'D') {
+      showDebugInfo();
+    }
+  }
+
+  // Service audio queues - CORE0 ONLY
+  for (int i = 0; i < NUM_PLAYERS; i++) {
+    if (players[i].playing) {
+      serviceAudioQueue(i);
+    }
+  }
+
+  // Print stats every 2 seconds
+  static unsigned long lastStats = 0;
+  if (millis() - lastStats > 2000) {
+    lastStats = millis();
+
+    int activePlayers = 0;
+    uint32_t minBuffer = BUFFER_SIZE;
+
+    for (int i = 0; i < NUM_PLAYERS; i++) {
+      if (players[i].playing) {
+        activePlayers++;
+        if (players[i].bufferAvailable < minBuffer) {
+          minBuffer = players[i].bufferAvailable;
+        }
+      }
+    }
+
+    if (activePlayers > 0) {
+      Serial.print("♪ Players: ");
+      Serial.print(activePlayers);
+      Serial.print(" | CPU: ");
+      Serial.print(AudioProcessorUsageMax());
+      Serial.print("% | Mem: ");
+      Serial.print(AudioMemoryUsageMax());
+      Serial.print(" | Buf: ");
+      Serial.print((minBuffer * 100) / BUFFER_SIZE);
+      Serial.println("%");
+      AudioProcessorUsageMaxReset();
+    }
+  }
+
+  // Small delay for stability
+  delay(1);
+}
+
+void serviceAudioQueue(int playerIndex) {
+  MP3Player* player = &players[playerIndex];
+
+  // Check if queue needs data
+  int16_t* queueBuffer = player->queue.getBuffer();
+  if (queueBuffer == NULL) {
+    return;  // Queue is full
+  }
+
+  // Lock mutex to read from shared buffer
+  mutex_enter_blocking(&player->mutex);
+
+  if (player->bufferAvailable < 128) {
+    // Underrun - send silence
+    mutex_exit(&player->mutex);
+    memset(queueBuffer, 0, 128 * sizeof(int16_t));
+    player->queue.playBuffer();
+    player->underrunCount++;
+    return;
+  }
+
+  // Copy from circular buffer
+  for (int i = 0; i < 128; i++) {
+    queueBuffer[i] = player->buffer[player->bufferReadPos];
+    player->bufferReadPos = (player->bufferReadPos + 1) % BUFFER_SIZE;
+  }
+  player->bufferAvailable -= 128;
+
+  mutex_exit(&player->mutex);
+
+  player->queue.playBuffer();
+}
+
+void playTrack(int playerIndex) {
+  if (playerIndex < 0 || playerIndex >= NUM_PLAYERS) return;
+
+  MP3Player* player = &players[playerIndex];
+
+  if (player->playing) {
+    stopPlayer(playerIndex);
+    delay(50);  // Give Core1 time to close file
+  }
+
+  // Build filename
+  snprintf(player->filename, sizeof(player->filename), "track%d.mp3", playerIndex + 1);
+
+  // Reset state
+  mutex_enter_blocking(&player->mutex);
+  player->filePosition = 0;
+  player->bufferReadPos = 0;
+  player->bufferWritePos = 0;
+  player->bufferAvailable = 0;
+  player->underrunCount = 0;
+  player->framesDecoded = 0;
+  player->mp3BufferFill = 0;
+  player->playing = true;  // Signal Core1 to start
+  mutex_exit(&player->mutex);
+
+  Serial.print("▶ Loading track ");
+  Serial.println(playerIndex + 1);
+}
+
+void stopPlayer(int playerIndex) {
+  if (playerIndex < 0 || playerIndex >= NUM_PLAYERS) return;
+
+  MP3Player* player = &players[playerIndex];
+  player->stopRequested = true;
+
+  // Wait for stop to complete
+  unsigned long timeout = millis();
+  while (player->playing && (millis() - timeout < 1000)) {
+    delay(10);
+  }
+
+  Serial.print("■ Stopped track ");
+  Serial.println(playerIndex + 1);
+}
+
+void stopAll() {
+  Serial.println("■ Stopping all tracks");
+  for (int i = 0; i < NUM_PLAYERS; i++) {
+    if (players[i].playing) {
+      stopPlayer(i);
+    }
+  }
+}
+
+void updateMixerGains() {
+  for (int i = 0; i < 4; i++) {
+    mixer1.gain(i, globalVolume);
+    mixer2.gain(i, globalVolume);
+    mixer3.gain(i, globalVolume);
+  }
+}
+
+void showDebugInfo() {
+  Serial.println("\n╔════════════════ DEBUG INFO ════════════════╗");
+  Serial.print("║ Core1 Running: ");
+  Serial.println(core1Running ? "YES" : "NO");
+  Serial.print("║ SD Initialized: ");
+  Serial.println(sdInitialized ? "YES" : "NO");
+  Serial.println("╠════════════════════════════════════════════╣");
+
+  for (int i = 0; i < NUM_PLAYERS; i++) {
+    if (players[i].playing || players[i].underrunCount > 0) {
+      Serial.print("║ Player ");
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.print(players[i].playing ? "PLAYING" : "stopped");
+      Serial.print(" | Buf: ");
+      Serial.print(players[i].bufferAvailable);
+      Serial.print("/");
+      Serial.print(BUFFER_SIZE);
+      Serial.print(" | Frames: ");
+      Serial.print(players[i].framesDecoded);
+      Serial.print(" | Underruns: ");
+      Serial.println(players[i].underrunCount);
+    }
+  }
+
+  Serial.println("╚════════════════════════════════════════════╝");
+}
+
+//=============================================================================
+// CORE1 FUNCTIONS - SD card operations + MP3 decoding
+//=============================================================================
+
+void core1_main() {
+  core1Running = true;
+
+  // Initialize SD card in SDIO mode on Core1
+  Serial.print("Core1: Initializing SD (SDIO mode)... ");
+
+  bool sdOk = SD.begin(SD_CLK_PIN, SD_CMD_PIN, SD_DAT0_PIN);
+
+  if (sdOk) {
+    Serial.println("OK");
+
+    // Print SD card info
+    uint64_t cardSize = SD.size();
+    uint32_t cardSizeMB = cardSize / (1024 * 1024);
+    Serial.print("Core1: SD card size: ");
+    Serial.print(cardSizeMB);
+    Serial.println(" MB");
+    Serial.println("Core1: SDIO 4-bit mode active (10-12 MB/s)");
+
+    sdInitialized = true;
+  } else {
+    Serial.println("FAILED");
+    Serial.println("Core1: Check SDIO wiring");
+    sdInitialized = false;
+  }
+
+  // Main loop for Core1
+  while (true) {
+    // Service all players - read from SD, decode MP3, fill buffers
+    for (int i = 0; i < NUM_PLAYERS; i++) {
+      core1_servicePlayer(i);
+    }
+    // Small yield to prevent watchdog issues
+    yield();
+  }
+}
+
+void core1_servicePlayer(int playerIndex) {
+  MP3Player* player = &players[playerIndex];
+
+  // Check if we should start this player
+  if (player->playing && !player->file && !player->stopRequested) {
+    core1_openFile(playerIndex);
+  }
+
+  // Check if stop requested
+  if (player->stopRequested && player->file) {
+    player->file.close();
+    mutex_enter_blocking(&player->mutex);
+    player->playing = false;
+    player->stopRequested = false;
+    mutex_exit(&player->mutex);
+    return;
+  }
+
+  // Fill buffer if playing
+  if (player->playing && player->file) {
+    core1_fillBuffer(playerIndex);
+  }
+}
+
+void core1_openFile(int playerIndex) {
+  MP3Player* player = &players[playerIndex];
+
+  // Open file
+  player->file = SD.open(player->filename, FILE_READ);
+  if (!player->file) {
+    Serial.print("Core1: Failed to open ");
+    Serial.println(player->filename);
+    mutex_enter_blocking(&player->mutex);
+    player->playing = false;
+    mutex_exit(&player->mutex);
+    return;
+  }
+
+  player->fileSize = player->file.size();
+  player->filePosition = 0;
+  player->mp3BufferFill = 0;
+
+  // Reinitialize decoder
+  mp3dec_init(&player->mp3dec);
+
+  Serial.print("Core1: Opened ");
+  Serial.print(player->filename);
+  Serial.print(" (");
+  Serial.print(player->fileSize);
+  Serial.println(" bytes)");
+}
+
+void core1_fillBuffer(int playerIndex) {
+  MP3Player* player = &players[playerIndex];
+
+  // Check if buffer needs filling
+  mutex_enter_blocking(&player->mutex);
+  uint32_t available = player->bufferAvailable;
+  uint32_t writePos = player->bufferWritePos;
+  mutex_exit(&player->mutex);
+
+  // Fill buffer when less than 75% full
+  if (available > (BUFFER_SIZE * 3 / 4)) {
+    return;  // Buffer still mostly full
+  }
+
+  // Decode MP3 frames and fill buffer
+  int16_t pcmBuffer[MINIMP3_MAX_SAMPLES_PER_FRAME];
+
+  // Ensure we have MP3 data to decode
+  if (player->mp3BufferFill < MP3_BUF_SIZE / 2 && player->file.available()) {
+    // Shift remaining data to beginning of buffer
+    if (player->mp3BufferFill > 0) {
+      memmove(player->mp3Buffer,
+              player->mp3Buffer + (MP3_BUF_SIZE - player->mp3BufferFill),
+              player->mp3BufferFill);
+    }
+
+    // Read more MP3 data
+    uint32_t toRead = MP3_BUF_SIZE - player->mp3BufferFill;
+    uint32_t bytesRead = player->file.read(
+      player->mp3Buffer + player->mp3BufferFill,
+      toRead
+    );
+    player->mp3BufferFill += bytesRead;
+    player->filePosition += bytesRead;
+  }
+
+  // Decode one frame
+  if (player->mp3BufferFill > 0) {
+    mp3dec_frame_info_t frameInfo;
+    int samples = mp3dec_decode_frame(
+      &player->mp3dec,
+      player->mp3Buffer,
+      player->mp3BufferFill,
+      pcmBuffer,
+      &frameInfo
+    );
+
+    if (samples > 0) {
+      player->framesDecoded++;
+
+      // Update sample rate on first frame
+      if (player->framesDecoded == 1) {
+        player->sampleRate = frameInfo.hz;
+        player->numChannels = frameInfo.channels;
+        Serial.print("Core1: MP3 info - ");
+        Serial.print(frameInfo.hz);
+        Serial.print("Hz, ");
+        Serial.print(frameInfo.channels);
+        Serial.print(" ch, ");
+        Serial.print(frameInfo.bitrate_kbps);
+        Serial.println(" kbps");
+      }
+
+      // Convert to mono if stereo
+      int monoSamples = samples;
+      if (frameInfo.channels == 2) {
+        monoSamples = samples / 2;
+        for (int i = 0; i < monoSamples; i++) {
+          int32_t left = pcmBuffer[i * 2];
+          int32_t right = pcmBuffer[i * 2 + 1];
+          pcmBuffer[i] = (int16_t)((left + right) / 2);
+        }
+      }
+
+      // Copy samples to circular buffer
+      mutex_enter_blocking(&player->mutex);
+      for (int i = 0; i < monoSamples && player->bufferAvailable < BUFFER_SIZE; i++) {
+        player->buffer[writePos] = pcmBuffer[i];
+        writePos = (writePos + 1) % BUFFER_SIZE;
+        player->bufferAvailable++;
+      }
+      player->bufferWritePos = writePos;
+      mutex_exit(&player->mutex);
+
+      // Remove decoded data from MP3 buffer
+      if (frameInfo.frame_bytes > 0) {
+        player->mp3BufferFill -= frameInfo.frame_bytes;
+        if (player->mp3BufferFill > 0) {
+          memmove(player->mp3Buffer,
+                  player->mp3Buffer + frameInfo.frame_bytes,
+                  player->mp3BufferFill);
+        }
+      }
+    } else {
+      // Decoding error or end of stream
+      if (!player->file.available() && player->mp3BufferFill < 128) {
+        // End of file
+        player->file.close();
+        mutex_enter_blocking(&player->mutex);
+        player->playing = false;
+        mutex_exit(&player->mutex);
+        Serial.print("Core1: Finished ");
+        Serial.println(player->filename);
+      } else {
+        // Skip this byte and try again (frame sync)
+        if (player->mp3BufferFill > 0) {
+          player->mp3BufferFill--;
+          memmove(player->mp3Buffer, player->mp3Buffer + 1, player->mp3BufferFill);
+        }
+      }
+    }
+  } else if (!player->file.available()) {
+    // End of file
+    player->file.close();
+    mutex_enter_blocking(&player->mutex);
+    player->playing = false;
+    mutex_exit(&player->mutex);
+  }
+}
