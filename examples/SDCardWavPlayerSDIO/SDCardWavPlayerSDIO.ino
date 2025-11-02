@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.8 (Debug Core1 buffer filling)
+// VERSION: 2.9 (FIXED: Swapped CLK and CMD pins - CLK=6, CMD=7)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -17,9 +17,9 @@
 // - VCC               -> 3.3V
 // - GND               -> GND
 //
-// SDIO Pin Configuration (6 pins required - VERIFIED WORKING):
-// - SD_CLK  -> GP7  (clock, any GPIO)
-// - SD_CMD  -> GP6  (command, any GPIO)
+// SDIO Pin Configuration (6 pins required - USER VERIFIED):
+// - SD_CLK  -> GP6  (clock, any GPIO)
+// - SD_CMD  -> GP7  (command, any GPIO)
 // - SD_DAT0 -> GP8  (data bit 0, must be base for consecutive pins)
 // - SD_DAT1 -> GP9  (data bit 1, must be DAT0+1)
 // - SD_DAT2 -> GP10 (data bit 2, must be DAT0+2)
@@ -44,10 +44,10 @@
 #include <pico/multicore.h>
 #include <pico/mutex.h>
 
-// SDIO Pin Configuration for RP2350 (VERIFIED WORKING)
-#define SD_CLK_PIN  7
-#define SD_CMD_PIN  6
-#define SD_DAT0_PIN 8  // DAT1=9, DAT2=10, DAT3=11 (consecutive!)
+// SDIO Pin Configuration for RP2350 (USER VERIFIED: CLK=6, CMD=7)
+#define SD_CLK_PIN  6   // User confirmed: CLK on GP6 (was wrongly GP7)
+#define SD_CMD_PIN  7   // User confirmed: CMD on GP7 (was wrongly GP6)
+#define SD_DAT0_PIN 8   // DAT1=9, DAT2=10, DAT3=11 (consecutive!)
 
 // Number of simultaneous players
 #define NUM_PLAYERS 10
@@ -146,16 +146,16 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.8 (2025-11-02)             ║");
+  Serial.println("║  VERSION 2.9 (2025-11-02)             ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
   Serial.println("Core0: Audio processing");
   Serial.println("Core1: SD card operations (SDIO)");
   Serial.println();
-  Serial.println("SDIO Pins (VERIFIED WORKING):");
-  Serial.println("  CLK:  GP7");
-  Serial.println("  CMD:  GP6");
+  Serial.println("SDIO Pins (USER VERIFIED - CLK=6, CMD=7):");
+  Serial.println("  CLK:  GP6");
+  Serial.println("  CMD:  GP7");
   Serial.println("  DAT0: GP8");
   Serial.println("  DAT1: GP9");
   Serial.println("  DAT2: GP10");
@@ -502,8 +502,8 @@ void core1_main() {
   } else {
     Serial.println("FAILED");
     Serial.println("Core1: Check SDIO wiring:");
-    Serial.println("  CLK:  GP7");
-    Serial.println("  CMD:  GP6");
+    Serial.println("  CLK:  GP6");
+    Serial.println("  CMD:  GP7");
     Serial.println("  DAT0: GP8");
     Serial.println("  DAT1: GP9");
     Serial.println("  DAT2: GP10");
