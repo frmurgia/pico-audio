@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.5 (Working file list + debug output)
+// VERSION: 2.6 (Simple filename format: 1.wav, 2.wav, etc.)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -146,7 +146,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.5 (2025-11-02)             ║");
+  Serial.println("║  VERSION 2.6 (2025-11-02)             ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -331,7 +331,7 @@ void playTrack(int playerIndex) {
   }
 
   // Build filename
-  snprintf(player->filename, sizeof(player->filename), "track%d.wav", playerIndex + 1);
+  snprintf(player->filename, sizeof(player->filename), "%d.wav", playerIndex + 1);
 
   // Reset state
   mutex_enter_blocking(&player->mutex);
@@ -441,7 +441,7 @@ void showFileList() {
   if (wavFiles == 0) {
     Serial.println("╠════════════════════════════════════════════╣");
     Serial.println("║ ⚠️  NO WAV FILES FOUND!");
-    Serial.println("║    Player looks for: track1.wav, track2.wav, etc.");
+    Serial.println("║    Player looks for: 1.wav, 2.wav, etc.");
   }
 
   Serial.println("╚════════════════════════════════════════════╝");
