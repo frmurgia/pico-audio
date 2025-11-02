@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.16 (Fix: Add fileOpen flag - File object bool check unreliable)
+// VERSION: 2.17 (Add debug output to core1_fillBuffer to diagnose Buf: 0%)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -148,7 +148,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.16 (2025-11-02)            ║");
+  Serial.println("║  VERSION 2.17 (2025-11-02)            ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -653,14 +653,26 @@ void core1_openFile(int playerIndex) {
 void core1_fillBuffer(int playerIndex) {
   WavPlayer* player = &players[playerIndex];
 
+  // Debug: Print every 50 calls for Player 1 only
+  static uint32_t debugCounter = 0;
+  bool shouldDebug = (playerIndex == 0 && (++debugCounter % 50 == 0));
+
   // Check if buffer needs filling
   mutex_enter_blocking(&player->mutex);
   uint32_t available = player->bufferAvailable;
   uint32_t writePos = player->bufferWritePos;
   mutex_exit(&player->mutex);
 
+  if (shouldDebug) {
+    Serial.print("🔧 fillBuffer P1: avail=");
+    Serial.print(available);
+    Serial.print("/");
+    Serial.print(BUFFER_SIZE);
+  }
+
   // Fill buffer when less than 75% full (less aggressive with SDIO speed)
   if (available > (BUFFER_SIZE * 3 / 4)) {
+    if (shouldDebug) Serial.println(" → FULL");
     return;  // Buffer still mostly full
   }
 
@@ -668,8 +680,16 @@ void core1_fillBuffer(int playerIndex) {
   uint32_t spaceAvailable = BUFFER_SIZE - available;
   uint32_t bytesRemaining = player->dataSize - player->dataPosition;
 
+  if (shouldDebug) {
+    Serial.print(" pos=");
+    Serial.print(player->dataPosition);
+    Serial.print("/");
+    Serial.print(player->dataSize);
+  }
+
   if (bytesRemaining == 0) {
     // End of file - stop silently (Core0 will notice via stats)
+    if (shouldDebug) Serial.println(" → EOF");
     player->file.close();
     player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
@@ -683,6 +703,11 @@ void core1_fillBuffer(int playerIndex) {
   uint32_t bytesToRead = min(samplesToRead * 2, bytesRemaining);
   samplesToRead = bytesToRead / 2;
 
+  if (shouldDebug) {
+    Serial.print(" read=");
+    Serial.print(bytesToRead);
+  }
+
   // Temporary buffer for bulk read (much faster than reading sample-by-sample!)
   // KEEP static for performance - but document that Core1 is single-threaded so this is safe
   static int16_t tempBuffer[2048];
@@ -693,7 +718,13 @@ void core1_fillBuffer(int playerIndex) {
     uint32_t bytesRead = player->file.read((uint8_t*)tempBuffer, bytesToRead);
     uint32_t samplesRead = bytesRead / 2;
 
+    if (shouldDebug) {
+      Serial.print(" got=");
+      Serial.print(bytesRead);
+    }
+
     if (bytesRead == 0) {
+      if (shouldDebug) Serial.println(" → FAIL!");
       return;  // Read failed
     }
 
@@ -709,7 +740,13 @@ void core1_fillBuffer(int playerIndex) {
     uint32_t bytesRead = player->file.read((uint8_t*)tempBuffer, bytesToRead);
     uint32_t samplesRead = bytesRead / 2;
 
+    if (shouldDebug) {
+      Serial.print(" got=");
+      Serial.print(bytesRead);
+    }
+
     if (bytesRead == 0) {
+      if (shouldDebug) Serial.println(" → FAIL!");
       return;  // Read failed
     }
 
@@ -724,6 +761,8 @@ void core1_fillBuffer(int playerIndex) {
     player->dataPosition += bytesRead;
     samplesToRead = samplesRead / 2;  // Mono samples written
   }
+
+  if (shouldDebug) Serial.println(" ✓");
 
   // Update write position and available count (with mutex)
   mutex_enter_blocking(&player->mutex);
