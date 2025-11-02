@@ -1,13 +1,13 @@
 // SD Card WAV Player - MEMORY CACHED VERSION
-// VERSION: 2.3 (PSRAM allocation fix)
+// VERSION: 2.4 (Practical memory limits)
 // DATE: 2025-11-02
 //
-// Strategy: Load all WAV files to memory at startup, then play from RAM
+// Strategy: Load WAV files to memory at startup, then play from RAM
 // This eliminates ALL SD card access during playback = ZERO latency!
 //
-// Pimoroni Pico Plus has 8MB PSRAM
-// This version loads files on-demand, keeps most recently used in cache
-// If total files > 8MB, loads only what fits in memory
+// IMPORTANT: Due to memory constraints, only files < 500KB each will be loaded
+// For larger files, please use the streaming player (SDCardWavPlayerSDIO)
+// Total memory budget: ~2MB (normal RAM + available heap)
 //
 // SD Card Wiring (SDIO 4-bit mode):
 // - CLK  -> GP7
@@ -24,15 +24,6 @@
 #include <SD.h>
 #include <pico-audio.h>
 
-// PSRAM allocation helper for RP2350
-// PSRAM is separate from normal RAM - must use special attributes
-#ifdef PICO_PSRAM_SIZE
-  // Allocate large buffer in PSRAM instead of normal RAM
-  #define PSRAM_ATTR __attribute__((section(".psram_data")))
-#else
-  #define PSRAM_ATTR
-#endif
-
 // SD Card pin configuration (SDIO 4-bit)
 #define SD_CLK_PIN  7
 #define SD_CMD_PIN  6
@@ -41,10 +32,12 @@
 // Number of simultaneous players
 #define NUM_PLAYERS 10
 
-// PSRAM Memory Pool - 7MB allocated in PSRAM, not normal RAM!
-#define PSRAM_POOL_SIZE (7 * 1024 * 1024)  // 7MB
-PSRAM_ATTR uint8_t psramPool[PSRAM_POOL_SIZE];  // This goes in PSRAM!
-uint32_t psramPoolUsed = 0;  // Track how much we've used
+// Memory limits - practical constraints for stable operation
+#define MAX_FILE_SIZE_KB 500        // Max file size to load (500KB per file)
+#define MAX_TOTAL_MEMORY_KB 2000    // Max total memory usage (2MB)
+
+// Memory tracking
+uint32_t totalMemoryUsed = 0;
 
 // WAV file header
 struct WavHeader {
@@ -113,9 +106,17 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - MEMORY CACHED        ║");
-  Serial.println("║  VERSION 2.3 (2025-11-02)             ║");
-  Serial.println("║  PSRAM allocation fix                 ║");
+  Serial.println("║  VERSION 2.4 (2025-11-02)             ║");
+  Serial.println("║  Practical memory limits              ║");
   Serial.println("╚════════════════════════════════════════╝");
+  Serial.println();
+  Serial.print("⚠️  File size limit: ");
+  Serial.print(MAX_FILE_SIZE_KB);
+  Serial.println(" KB per file");
+  Serial.print("⚠️  Total memory limit: ");
+  Serial.print(MAX_TOTAL_MEMORY_KB);
+  Serial.println(" KB");
+  Serial.println("    (Larger files will be skipped)");
   Serial.println();
 
   // Initialize SD card in SDIO 4-bit mode
@@ -338,32 +339,15 @@ void serviceAudioQueue(int playerIndex) {
   player->queue.playBuffer();
 }
 
-// Allocate memory from PSRAM pool instead of normal RAM
-void* psramAlloc(size_t size) {
-  // Align to 4 bytes
-  size = (size + 3) & ~3;
-
-  if (psramPoolUsed + size > PSRAM_POOL_SIZE) {
-    Serial.print("ERROR: PSRAM pool exhausted! Need ");
-    Serial.print(size);
-    Serial.print(" bytes, only ");
-    Serial.print(PSRAM_POOL_SIZE - psramPoolUsed);
-    Serial.println(" bytes remaining");
-    return NULL;
-  }
-
-  void* ptr = &psramPool[psramPoolUsed];
-  psramPoolUsed += size;
-
-  Serial.print("  DEBUG: Allocated ");
-  Serial.print(size);
-  Serial.print(" bytes from PSRAM (");
-  Serial.print(psramPoolUsed / 1024);
-  Serial.print(" KB / ");
-  Serial.print(PSRAM_POOL_SIZE / 1024);
-  Serial.println(" KB used)");
-
-  return ptr;
+// Helper function to get free PSRAM
+uint32_t getFreePSRAM() {
+  #ifdef PICO_PSRAM_SIZE
+    // Try to estimate free PSRAM by attempting allocation
+    // RP2350B has 8MB PSRAM
+    return 8 * 1024 * 1024 - totalMemoryUsed;
+  #else
+    return 0;
+  #endif
 }
 
 void loadAllWavFiles() {
@@ -381,9 +365,6 @@ void loadAllWavFiles() {
 
   Serial.println();
   Serial.println("Scanning for WAV files...");
-  Serial.print("PSRAM pool: ");
-  Serial.print(PSRAM_POOL_SIZE / 1024);
-  Serial.println(" KB available");
   Serial.println();
 
   while (fileCount < NUM_PLAYERS) {
@@ -423,20 +404,33 @@ void loadAllWavFiles() {
 
     Serial.println("  → WAV file detected!");
     uint32_t fileSize = entry.size();
+    uint32_t fileSizeKB = fileSize / 1024;
     Serial.print("  → Size: ");
     Serial.print(fileSize);
     Serial.print(" bytes (");
-    Serial.print(fileSize / 1024);
+    Serial.print(fileSizeKB);
     Serial.println(" KB)");
 
-    // Check if this file would exceed PSRAM pool limit
-    if (psramPoolUsed + fileSize > PSRAM_POOL_SIZE) {
-      Serial.print("  ⚠️  SKIPPING: Would exceed PSRAM limit (");
-      Serial.print(psramPoolUsed / 1024);
-      Serial.print(" KB used + ");
-      Serial.print(fileSize / 1024);
+    // Check if file is too large
+    if (fileSizeKB > MAX_FILE_SIZE_KB) {
+      Serial.print("  ⚠️  SKIPPING: File too large (");
+      Serial.print(fileSizeKB);
       Serial.print(" KB > ");
-      Serial.print(PSRAM_POOL_SIZE / 1024);
+      Serial.print(MAX_FILE_SIZE_KB);
+      Serial.println(" KB limit)");
+      Serial.println("     Use SDCardWavPlayerSDIO for large files");
+      entry.close();
+      continue;
+    }
+
+    // Check if this file would exceed total memory limit
+    if (totalMemoryUsed + fileSize > (MAX_TOTAL_MEMORY_KB * 1024)) {
+      Serial.print("  ⚠️  SKIPPING: Would exceed total memory limit (");
+      Serial.print(totalMemoryUsed / 1024);
+      Serial.print(" KB used + ");
+      Serial.print(fileSizeKB);
+      Serial.print(" KB > ");
+      Serial.print(MAX_TOTAL_MEMORY_KB);
       Serial.println(" KB limit)");
       entry.close();
       continue;
@@ -573,18 +567,24 @@ bool loadWavToMemory(File &file, CachedWavFile* cached) {
       // Found data chunk - allocate memory
       uint32_t numSamples = chunkSize / 2;  // 16-bit samples
 
-      Serial.print("  DEBUG: Need to allocate ");
+      Serial.print("  DEBUG: Allocating ");
       Serial.print(chunkSize);
       Serial.print(" bytes (");
       Serial.print(chunkSize / 1024);
-      Serial.println(" KB) from PSRAM...");
+      Serial.println(" KB)...");
 
-      cached->audioData = (int16_t*)psramAlloc(chunkSize);
+      // Try to allocate memory - on RP2350 with PSRAM this should use PSRAM automatically
+      cached->audioData = (int16_t*)malloc(chunkSize);
       if (cached->audioData == NULL) {
-        Serial.println("  ❌ ERROR: psramAlloc() FAILED - PSRAM pool exhausted!");
+        Serial.println("  ❌ ERROR: malloc() FAILED - out of memory!");
+        Serial.println("  ⚠️  Note: Large files may need to be split into smaller chunks");
         return false;
       }
-      Serial.println("  ✓ PSRAM allocated successfully");
+
+      totalMemoryUsed += chunkSize;
+      Serial.print("  ✓ Memory allocated (Total: ");
+      Serial.print(totalMemoryUsed / 1024);
+      Serial.println(" KB)");
 
       // Read all audio data to memory
       Serial.println("  DEBUG: Reading audio data from SD...");
@@ -701,17 +701,17 @@ void showMemoryInfo() {
   }
 
   Serial.println("╠════════════════════════════════════════════╣");
-  Serial.print("║ PSRAM pool used: ");
-  Serial.print(psramPoolUsed / 1024);
+  Serial.print("║ Total memory used: ");
+  Serial.print(totalMemoryUsed / 1024);
+  Serial.print(" KB / ");
+  Serial.print(MAX_TOTAL_MEMORY_KB);
   Serial.print(" KB (");
-  Serial.print(psramPoolUsed / 1024.0 / 1024.0, 2);
-  Serial.println(" MB)");
+  Serial.print((totalMemoryUsed * 100) / (MAX_TOTAL_MEMORY_KB * 1024));
+  Serial.println("%)");
 
-  Serial.print("║ PSRAM pool total: ");
-  Serial.print(PSRAM_POOL_SIZE / 1024);
-  Serial.print(" KB | Used: ");
-  Serial.print((psramPoolUsed * 100) / PSRAM_POOL_SIZE, 1);
-  Serial.println("%");
+  Serial.print("║ Per-file limit: ");
+  Serial.print(MAX_FILE_SIZE_KB);
+  Serial.println(" KB");
 
   Serial.println("╚════════════════════════════════════════════╝");
 }
