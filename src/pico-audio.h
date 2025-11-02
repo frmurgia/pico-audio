@@ -39,6 +39,7 @@
 
 #include "play_memory.h"
 #include "play_queue.h"
+#include "play_sd_wav.h"
 
 #include "synth_tonesweep.h"
 #include "synth_sine.h"
