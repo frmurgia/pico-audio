@@ -708,6 +708,7 @@ void core1_fillBuffer(int playerIndex) {
   samplesToRead = bytesToRead / 2;
 
   // Temporary buffer for bulk read (much faster than reading sample-by-sample!)
+  // KEEP static for performance - but document that Core1 is single-threaded so this is safe
   static int16_t tempBuffer[2048];
 
   // Read without holding mutex (only this core writes to buffer)
