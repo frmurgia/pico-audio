@@ -1,5 +1,5 @@
 // SD Card WAV Player - SDIO 4-BIT VERSION
-// VERSION: 2.10 (Reverted to working pins: CLK=7, CMD=6)
+// VERSION: 2.11 (Enhanced EOF debug - always print when player stops)
 // DATE: 2025-11-02
 //
 // Uses SDIO 4-bit mode instead of SPI for maximum SD card performance
@@ -146,7 +146,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║  SD WAV Player - SDIO 4-BIT MODE     ║");
-  Serial.println("║  VERSION 2.10 (2025-11-02)            ║");
+  Serial.println("║  VERSION 2.11 (2025-11-02)            ║");
   Serial.println("║  RP2350B - 10-12 MB/s SDIO Bandwidth ║");
   Serial.println("╚════════════════════════════════════════╝");
   Serial.println();
@@ -693,8 +693,10 @@ void core1_fillBuffer(int playerIndex) {
   }
 
   if (bytesRemaining == 0) {
-    if (shouldDebug) Serial.println(" → EOF");
-    // End of file
+    // End of file - ALWAYS print this for debugging
+    Serial.print("PLAYER ");
+    Serial.print(playerIndex + 1);
+    Serial.println(" REACHED EOF - STOPPING");
     player->file.close();
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
