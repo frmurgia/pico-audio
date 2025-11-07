@@ -211,16 +211,13 @@ void AudioPlaySdWav::update(void)
 		file_position += buffer_length;
 
 		buffer_offset = 0;
-		bool parsing = (state >= 8);
 		bool txok = consume(buffer_length);
 		if (txok) {
 			if (state != STATE_STOP) return;
-		} else {
-			if (state != STATE_STOP) {
-				if (parsing && state < 8) goto readagain;
-				else goto cleanup;
-			}
 		}
+		// If consume didn't complete, return and let next update() read more data
+		// This prevents multiple SD card operations in a single update() call
+		if (state != STATE_STOP) return;
 	}
 end:	// end of file reached or other reason to stop
 	state_play = STATE_STOP;
