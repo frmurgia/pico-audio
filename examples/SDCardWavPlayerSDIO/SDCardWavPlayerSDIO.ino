@@ -707,7 +707,7 @@ void core1_fillBuffer(int playerIndex) {
   if (bytesRemaining == 0) {
     // End of file - stop silently (Core0 will notice via stats)
     if (shouldDebug) Serial.println(" → EOF");
-    player->file.close();
+    // No file to close - using open/read/close pattern
     player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
