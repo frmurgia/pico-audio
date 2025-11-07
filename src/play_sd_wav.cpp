@@ -179,7 +179,7 @@ void AudioPlaySdWav::update(void)
 			if (n > data_length) n = data_length;
 
 			// Consume audio data
-			if (!consume(n)) goto end;
+			if (consume(n) == 0) goto end;
 
 			// Check if we filled the audio blocks
 			if (block_offset >= AUDIO_BLOCK_SAMPLES) {
@@ -207,14 +207,14 @@ end:
 	block_right = NULL;
 }
 
-bool AudioPlaySdWav::consume(uint32_t size)
+uint32_t AudioPlaySdWav::consume(uint32_t size)
 {
 	uint32_t len;
 	uint8_t lsb, msb;
 	const uint8_t *p;
 
 	p = buffer + buffer_offset;
-	if (size == 0) return false;
+	if (size == 0) return 0;
 	len = size;
 
 	// Copy samples to audio blocks
@@ -234,10 +234,11 @@ bool AudioPlaySdWav::consume(uint32_t size)
 		len -= 4;
 	}
 
-	buffer_offset += (size - len);
-	data_length -= (size - len);
+	uint32_t consumed = size - len;
+	buffer_offset += consumed;
+	data_length -= consumed;
 
-	return true;
+	return consumed;
 }
 
 bool AudioPlaySdWav::parse_format(void)
