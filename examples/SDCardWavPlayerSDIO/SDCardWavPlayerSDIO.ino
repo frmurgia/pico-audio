@@ -53,8 +53,8 @@
 // Number of simultaneous players
 #define NUM_PLAYERS 10
 
-// Buffer size per player
-#define BUFFER_SIZE 4096  // Smaller buffer OK with SDIO speed (4K samples = 93ms)
+// Buffer size per player - INCREASED for multi-file stability
+#define BUFFER_SIZE 8192  // 8KB buffer = 186ms @ 44.1kHz (was 4KB = 93ms)
 
 // WAV file header
 struct WavHeader {
@@ -752,9 +752,9 @@ void core1_openFile(int playerIndex) {
 void core1_fillBuffer(int playerIndex) {
   WavPlayer* player = &players[playerIndex];
 
-  // Debug: Print every 50 calls for Player 1 only
+  // Debug: Print every 500 calls for Player 1 only (reduced spam)
   static uint32_t debugCounter = 0;
-  bool shouldDebug = (playerIndex == 0 && (++debugCounter % 50 == 0));
+  bool shouldDebug = (playerIndex == 0 && (++debugCounter % 500 == 0));
 
   // Check if buffer needs filling
   mutex_enter_blocking(&player->mutex);
@@ -769,10 +769,11 @@ void core1_fillBuffer(int playerIndex) {
     Serial.print(BUFFER_SIZE);
   }
 
-  // Fill buffer when less than 75% full (less aggressive with SDIO speed)
-  if (available > (BUFFER_SIZE * 3 / 4)) {
+  // Fill buffer when less than 50% full (aggressive refill for multi-file)
+  // With File Pool, we can afford to refill more often without performance hit
+  if (available > (BUFFER_SIZE / 2)) {
     if (shouldDebug) Serial.println(" → FULL");
-    return;  // Buffer still mostly full
+    return;  // Buffer still has enough data
   }
 
   // Read chunk
