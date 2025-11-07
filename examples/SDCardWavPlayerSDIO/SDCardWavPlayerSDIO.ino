@@ -133,6 +133,79 @@ volatile bool sdInitialized = false;
 mutex_t sd_mutex;
 bool sd_mutex_initialized = false;
 
+// File Pool Manager - keeps max 3 files open with LRU eviction
+// This is the sweet spot for RP2350 SDIO: not too many (performance), not too few (overhead)
+#define FILE_POOL_SIZE 3
+
+struct FilePoolEntry {
+  File file;
+  char filename[32];
+  bool inUse;
+  uint32_t lastAccessTime;
+};
+
+struct FilePool {
+  FilePoolEntry slots[FILE_POOL_SIZE];
+  uint32_t accessCounter;  // Monotonic counter for LRU
+} filePool;
+
+// Get file from pool (opens if needed, using LRU eviction)
+// Must be called with sd_mutex held!
+File* getFileFromPool(const char* filename) {
+  uint32_t currentTime = ++filePool.accessCounter;
+
+  // Check if file is already open
+  for (int i = 0; i < FILE_POOL_SIZE; i++) {
+    if (filePool.slots[i].inUse && strcmp(filePool.slots[i].filename, filename) == 0) {
+      // Cache hit! Update access time and return
+      filePool.slots[i].lastAccessTime = currentTime;
+      return &filePool.slots[i].file;
+    }
+  }
+
+  // File not open - find a slot
+  int slotToUse = -1;
+
+  // First, try to find an empty slot
+  for (int i = 0; i < FILE_POOL_SIZE; i++) {
+    if (!filePool.slots[i].inUse) {
+      slotToUse = i;
+      break;
+    }
+  }
+
+  // If no empty slot, evict LRU (oldest access time)
+  if (slotToUse == -1) {
+    uint32_t oldestTime = 0xFFFFFFFF;
+    for (int i = 0; i < FILE_POOL_SIZE; i++) {
+      if (filePool.slots[i].lastAccessTime < oldestTime) {
+        oldestTime = filePool.slots[i].lastAccessTime;
+        slotToUse = i;
+      }
+    }
+
+    // Close the evicted file
+    if (filePool.slots[slotToUse].file) {
+      filePool.slots[slotToUse].file.close();
+    }
+  }
+
+  // Open new file in the selected slot
+  filePool.slots[slotToUse].file = SD.open(filename, FILE_READ);
+  if (!filePool.slots[slotToUse].file) {
+    filePool.slots[slotToUse].inUse = false;
+    return nullptr;
+  }
+
+  // Update slot metadata
+  strncpy(filePool.slots[slotToUse].filename, filename, sizeof(filePool.slots[slotToUse].filename) - 1);
+  filePool.slots[slotToUse].filename[sizeof(filePool.slots[slotToUse].filename) - 1] = 0;
+  filePool.slots[slotToUse].inUse = true;
+  filePool.slots[slotToUse].lastAccessTime = currentTime;
+
+  return &filePool.slots[slotToUse].file;
+}
+
 // Forward declarations
 void core1_main();
 void playTrack(int playerIndex);
@@ -173,6 +246,14 @@ void setup() {
     mutex_init(&sd_mutex);
     sd_mutex_initialized = true;
   }
+
+  // Initialize file pool
+  for (int i = 0; i < FILE_POOL_SIZE; i++) {
+    filePool.slots[i].inUse = false;
+    filePool.slots[i].filename[0] = 0;
+    filePool.slots[i].lastAccessTime = 0;
+  }
+  filePool.accessCounter = 0;
 
   // Initialize audio
   AudioMemory(120);
@@ -569,10 +650,10 @@ void core1_servicePlayer(int playerIndex) {
 void core1_openFile(int playerIndex) {
   WavPlayer* player = &players[playerIndex];
 
-  // Open file temporarily to parse header (with global mutex)
+  // Get file from pool to parse header
   mutex_enter_blocking(&sd_mutex);
-  File file = SD.open(player->filename, FILE_READ);
-  if (!file) {
+  File* filePtr = getFileFromPool(player->filename);
+  if (!filePtr || !(*filePtr)) {
     mutex_exit(&sd_mutex);
     // File open failed - print error (critical for debugging)
     Serial.print("❌ ERROR: Cannot open file: ");
@@ -584,11 +665,13 @@ void core1_openFile(int playerIndex) {
     return;
   }
 
+  // Rewind to start for header parsing
+  filePtr->seek(0);
+
   // Read WAV header
   WavHeader header;
-  if (file.read((uint8_t*)&header, sizeof(WavHeader)) != sizeof(WavHeader)) {
+  if (filePtr->read((uint8_t*)&header, sizeof(WavHeader)) != sizeof(WavHeader)) {
     // Header read failed
-    file.close();
     mutex_exit(&sd_mutex);
     Serial.print("❌ ERROR: Cannot read WAV header: ");
     Serial.println(player->filename);
@@ -605,7 +688,6 @@ void core1_openFile(int playerIndex) {
       header.audioFormat != 1 ||  // PCM
       header.bitsPerSample != 16) {
     // Invalid format
-    file.close();
     mutex_exit(&sd_mutex);
     Serial.print("❌ ERROR: Invalid WAV format: ");
     Serial.print(player->filename);
@@ -628,21 +710,21 @@ void core1_openFile(int playerIndex) {
   uint32_t chunkSize;
   bool foundData = false;
 
-  while (file.available()) {
-    if (file.read((uint8_t*)chunkID, 4) != 4) break;
-    if (file.read((uint8_t*)&chunkSize, 4) != 4) break;
+  while (filePtr->available()) {
+    if (filePtr->read((uint8_t*)chunkID, 4) != 4) break;
+    if (filePtr->read((uint8_t*)&chunkSize, 4) != 4) break;
 
     if (strncmp(chunkID, "data", 4) == 0) {
       player->dataSize = chunkSize;
-      player->dataStartPosition = file.position();  // Save where audio data starts!
+      player->dataStartPosition = filePtr->position();  // Save where audio data starts!
       foundData = true;
       break;
     } else {
-      file.seek(file.position() + chunkSize);
+      filePtr->seek(filePtr->position() + chunkSize);
     }
   }
 
-  file.close();  // Close immediately after parsing header
+  // DON'T close - pool manages file lifetime!
   mutex_exit(&sd_mutex);  // Release SD mutex
 
   if (!foundData) {
@@ -729,29 +811,32 @@ void core1_fillBuffer(int playerIndex) {
   // KEEP static for performance - but document that Core1 is single-threaded so this is safe
   static int16_t tempBuffer[2048];
 
-  // CRITICAL: Open/Seek/Read/Close pattern for SDIO multi-file performance
-  // SDIO with 3+ files open simultaneously has terrible performance
-  // Opening/closing for each read is MUCH faster than keeping files open!
+  // CRITICAL: Use File Pool Manager for optimal SDIO performance
+  // Pool keeps max 3 files open with LRU eviction
+  // This avoids both problems:
+  // - Too many files open (SDIO performance collapse)
+  // - Constant open/close (filesystem overhead)
 
-  // LOCK SD mutex for entire open/seek/read/close operation
+  // LOCK SD mutex for entire operation
   mutex_enter_blocking(&sd_mutex);
 
-  File file = SD.open(player->filename, FILE_READ);
-  if (!file) {
+  // Get file from pool (may open, reuse, or evict LRU)
+  File* filePtr = getFileFromPool(player->filename);
+  if (!filePtr || !(*filePtr)) {
     mutex_exit(&sd_mutex);
-    if (shouldDebug) Serial.println(" → OPEN FAIL!");
-    return;  // File open failed
+    if (shouldDebug) Serial.println(" → POOL FAIL!");
+    return;  // Failed to get file
   }
 
   // Seek to current position in audio data
-  file.seek(player->dataStartPosition + player->dataPosition);
+  filePtr->seek(player->dataStartPosition + player->dataPosition);
 
   // Read data
   uint32_t bytesRead = 0;
   if (player->numChannels == 1) {
     // Mono - read entire chunk at once
-    bytesRead = file.read((uint8_t*)tempBuffer, bytesToRead);
-    file.close();  // Close immediately after read!
+    bytesRead = filePtr->read((uint8_t*)tempBuffer, bytesToRead);
+    // DON'T close - pool manages file lifetime!
     mutex_exit(&sd_mutex);  // Release SD mutex
 
     uint32_t samplesRead = bytesRead / 2;
@@ -775,8 +860,8 @@ void core1_fillBuffer(int playerIndex) {
     samplesToRead = samplesRead;  // Update for mutex section below
   } else {
     // Stereo - read entire chunk at once, then mix
-    bytesRead = file.read((uint8_t*)tempBuffer, bytesToRead);
-    file.close();  // Close immediately after read!
+    bytesRead = filePtr->read((uint8_t*)tempBuffer, bytesToRead);
+    // DON'T close - pool manages file lifetime!
     mutex_exit(&sd_mutex);  // Release SD mutex
 
     uint32_t samplesRead = bytesRead / 2;
