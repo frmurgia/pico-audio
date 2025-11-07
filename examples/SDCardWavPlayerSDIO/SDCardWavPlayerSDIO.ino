@@ -134,7 +134,8 @@ mutex_t sd_mutex;
 bool sd_mutex_initialized = false;
 
 // File Pool Manager - keeps max 3 files open with LRU eviction
-// This is the sweet spot for RP2350 SDIO: not too many (performance), not too few (overhead)
+// CRITICAL: Files are NEVER closed once opened - we only seek between reads
+// This avoids SD library file descriptor exhaustion after many open/close cycles
 #define FILE_POOL_SIZE 3
 
 struct FilePoolEntry {
@@ -142,6 +143,7 @@ struct FilePoolEntry {
   char filename[32];
   bool inUse;
   uint32_t lastAccessTime;
+  uint32_t dataStartPosition;  // Cache data start position to avoid re-parsing headers
 };
 
 struct FilePool {
@@ -150,8 +152,9 @@ struct FilePool {
 } filePool;
 
 // Get file from pool (opens if needed, using LRU eviction)
+// CRITICAL: Files are NEVER closed - only evicted and replaced
 // Must be called with sd_mutex held!
-File* getFileFromPool(const char* filename) {
+File* getFileFromPool(const char* filename, uint32_t* outDataStartPosition) {
   uint32_t currentTime = ++filePool.accessCounter;
 
   // Check if file is already open
@@ -159,6 +162,7 @@ File* getFileFromPool(const char* filename) {
     if (filePool.slots[i].inUse && strcmp(filePool.slots[i].filename, filename) == 0) {
       // Cache hit! Update access time and return
       filePool.slots[i].lastAccessTime = currentTime;
+      *outDataStartPosition = filePool.slots[i].dataStartPosition;
       return &filePool.slots[i].file;
     }
   }
@@ -184,10 +188,10 @@ File* getFileFromPool(const char* filename) {
       }
     }
 
-    // Close the evicted file
-    if (filePool.slots[slotToUse].file) {
-      filePool.slots[slotToUse].file.close();
-    }
+    // IMPORTANT: Do NOT close the evicted file - just mark slot as available
+    // Closing files causes SD library file descriptor exhaustion
+    // The File object will be overwritten by SD.open() below
+    filePool.slots[slotToUse].inUse = false;
   }
 
   // Open new file in the selected slot
@@ -197,11 +201,43 @@ File* getFileFromPool(const char* filename) {
     return nullptr;
   }
 
+  // Parse header ONCE and cache dataStartPosition
+  // This avoids re-parsing headers on every eviction/reopen
+  WavHeader header;
+  if (filePool.slots[slotToUse].file.read((uint8_t*)&header, sizeof(WavHeader)) != sizeof(WavHeader)) {
+    filePool.slots[slotToUse].inUse = false;
+    return nullptr;
+  }
+
+  // Find data chunk
+  char chunkID[4];
+  uint32_t chunkSize;
+  bool foundData = false;
+
+  while (filePool.slots[slotToUse].file.available()) {
+    if (filePool.slots[slotToUse].file.read((uint8_t*)chunkID, 4) != 4) break;
+    if (filePool.slots[slotToUse].file.read((uint8_t*)&chunkSize, 4) != 4) break;
+
+    if (strncmp(chunkID, "data", 4) == 0) {
+      filePool.slots[slotToUse].dataStartPosition = filePool.slots[slotToUse].file.position();
+      foundData = true;
+      break;
+    } else {
+      filePool.slots[slotToUse].file.seek(filePool.slots[slotToUse].file.position() + chunkSize);
+    }
+  }
+
+  if (!foundData) {
+    filePool.slots[slotToUse].inUse = false;
+    return nullptr;
+  }
+
   // Update slot metadata
   strncpy(filePool.slots[slotToUse].filename, filename, sizeof(filePool.slots[slotToUse].filename) - 1);
   filePool.slots[slotToUse].filename[sizeof(filePool.slots[slotToUse].filename) - 1] = 0;
   filePool.slots[slotToUse].inUse = true;
   filePool.slots[slotToUse].lastAccessTime = currentTime;
+  *outDataStartPosition = filePool.slots[slotToUse].dataStartPosition;
 
   return &filePool.slots[slotToUse].file;
 }
@@ -252,6 +288,7 @@ void setup() {
     filePool.slots[i].inUse = false;
     filePool.slots[i].filename[0] = 0;
     filePool.slots[i].lastAccessTime = 0;
+    filePool.slots[i].dataStartPosition = 0;
   }
   filePool.accessCounter = 0;
 
@@ -650,9 +687,11 @@ void core1_servicePlayer(int playerIndex) {
 void core1_openFile(int playerIndex) {
   WavPlayer* player = &players[playerIndex];
 
-  // Get file from pool to parse header
+  // Get file from pool - header parsing happens inside getFileFromPool
   mutex_enter_blocking(&sd_mutex);
-  File* filePtr = getFileFromPool(player->filename);
+  uint32_t dataStartPos = 0;
+  File* filePtr = getFileFromPool(player->filename, &dataStartPos);
+
   if (!filePtr || !(*filePtr)) {
     mutex_exit(&sd_mutex);
     // File open failed - print error (critical for debugging)
@@ -665,78 +704,22 @@ void core1_openFile(int playerIndex) {
     return;
   }
 
-  // Rewind to start for header parsing
+  // Get file size for dataSize calculation
+  uint32_t fileSize = filePtr->size();
+  player->dataStartPosition = dataStartPos;
+  player->dataSize = fileSize - dataStartPos;  // Remaining audio data
+
+  // Determine channels from header (need to read header again for this info)
   filePtr->seek(0);
-
-  // Read WAV header
   WavHeader header;
-  if (filePtr->read((uint8_t*)&header, sizeof(WavHeader)) != sizeof(WavHeader)) {
-    // Header read failed
-    mutex_exit(&sd_mutex);
-    Serial.print("❌ ERROR: Cannot read WAV header: ");
-    Serial.println(player->filename);
-    player->fileOpen = false;
-    mutex_enter_blocking(&player->mutex);
-    player->playing = false;
-    mutex_exit(&player->mutex);
-    return;
+  if (filePtr->read((uint8_t*)&header, sizeof(WavHeader)) == sizeof(WavHeader)) {
+    player->numChannels = header.numChannels;
+  } else {
+    // Default to stereo if can't read
+    player->numChannels = 2;
   }
 
-  // Validate WAV format
-  if (strncmp(header.riff, "RIFF", 4) != 0 ||
-      strncmp(header.wave, "WAVE", 4) != 0 ||
-      header.audioFormat != 1 ||  // PCM
-      header.bitsPerSample != 16) {
-    // Invalid format
-    mutex_exit(&sd_mutex);
-    Serial.print("❌ ERROR: Invalid WAV format: ");
-    Serial.print(player->filename);
-    Serial.print(" (fmt=");
-    Serial.print(header.audioFormat);
-    Serial.print(", bits=");
-    Serial.print(header.bitsPerSample);
-    Serial.println(")");
-    player->fileOpen = false;
-    mutex_enter_blocking(&player->mutex);
-    player->playing = false;
-    mutex_exit(&player->mutex);
-    return;
-  }
-
-  player->numChannels = header.numChannels;
-
-  // Find data chunk
-  char chunkID[4];
-  uint32_t chunkSize;
-  bool foundData = false;
-
-  while (filePtr->available()) {
-    if (filePtr->read((uint8_t*)chunkID, 4) != 4) break;
-    if (filePtr->read((uint8_t*)&chunkSize, 4) != 4) break;
-
-    if (strncmp(chunkID, "data", 4) == 0) {
-      player->dataSize = chunkSize;
-      player->dataStartPosition = filePtr->position();  // Save where audio data starts!
-      foundData = true;
-      break;
-    } else {
-      filePtr->seek(filePtr->position() + chunkSize);
-    }
-  }
-
-  // DON'T close - pool manages file lifetime!
   mutex_exit(&sd_mutex);  // Release SD mutex
-
-  if (!foundData) {
-    // No data chunk found
-    Serial.print("❌ ERROR: No data chunk in WAV file: ");
-    Serial.println(player->filename);
-    player->fileOpen = false;
-    mutex_enter_blocking(&player->mutex);
-    player->playing = false;
-    mutex_exit(&player->mutex);
-    return;
-  }
 
   // File ready to play successfully!
   player->fileOpen = true;  // CRITICAL: Mark file as ready
@@ -813,16 +796,15 @@ void core1_fillBuffer(int playerIndex) {
   static int16_t tempBuffer[2048];
 
   // CRITICAL: Use File Pool Manager for optimal SDIO performance
-  // Pool keeps max 3 files open with LRU eviction
-  // This avoids both problems:
-  // - Too many files open (SDIO performance collapse)
-  // - Constant open/close (filesystem overhead)
+  // Pool keeps max 3 files open - files are NEVER closed, only seek between reads
+  // This avoids SD library file descriptor exhaustion
 
   // LOCK SD mutex for entire operation
   mutex_enter_blocking(&sd_mutex);
 
   // Get file from pool (may open, reuse, or evict LRU)
-  File* filePtr = getFileFromPool(player->filename);
+  uint32_t dataStartPos = 0;
+  File* filePtr = getFileFromPool(player->filename, &dataStartPos);
   if (!filePtr || !(*filePtr)) {
     mutex_exit(&sd_mutex);
     if (shouldDebug) Serial.println(" → POOL FAIL!");
@@ -830,7 +812,7 @@ void core1_fillBuffer(int playerIndex) {
   }
 
   // Seek to current position in audio data
-  filePtr->seek(player->dataStartPosition + player->dataPosition);
+  filePtr->seek(dataStartPos + player->dataPosition);
 
   // Read data
   uint32_t bytesRead = 0;
