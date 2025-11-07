@@ -1,2 +1,0 @@
-/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-build/enc_bootloader_mbedtls/CMakeFiles/edit_cache.dir
-/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-build/enc_bootloader_mbedtls/CMakeFiles/rebuild_cache.dir
