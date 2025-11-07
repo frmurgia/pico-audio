@@ -175,6 +175,16 @@ void AudioPlaySdWav::update(void)
 		buffer_length = wavfile.read(buffer, 512);
 		mutex_exit(&sd_mutex);
 
+		// Debug: Show buffer read activity (only once per second to avoid spam)
+		static unsigned long lastDebug = 0;
+		if (millis() - lastDebug > 1000) {
+			lastDebug = millis();
+			Serial.print("Read: ");
+			Serial.print(buffer_length);
+			Serial.print(" bytes, State: ");
+			Serial.println(state);
+		}
+
 		if (buffer_length == 0) goto end;
 		buffer_offset = 0;
 		bool parsing = (state >= 8);
@@ -506,6 +516,16 @@ bool AudioPlaySdWav::parse_format(void)
 	} else {
 		return false;
 	}
+
+	// Debug: Print format info
+	Serial.print("WAV Format - Rate: ");
+	Serial.print(rate);
+	Serial.print("Hz, Channels: ");
+	Serial.print(channels);
+	Serial.print(", Bits: ");
+	Serial.print(bits);
+	Serial.print(", State: ");
+	Serial.println(num);
 
 	bytes2millis = b2m;
 	state_play = num;
