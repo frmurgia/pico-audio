@@ -46,9 +46,8 @@ public:
 	uint32_t lengthMillis(void);
 	virtual void update(void);
 private:
-	File wavfile;				// temporary - only open during read operations
-	char filename[64];			// store filename to reopen file each time
-	uint32_t file_position;		// current position in file for seeking
+	File wavfile;				// file kept open during playback
+	char filename[64];			// store filename for reference
 	bool consume(uint32_t size);
 	bool parse_format(void);
 	uint32_t header[10];		// temporary storage of wav header data
