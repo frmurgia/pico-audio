@@ -291,10 +291,18 @@ bool AudioPlaySdWav::parse_format(void)
 
 		if (header_offset == 17) {
 			// Look for "fmt " chunk
+			if (!debugPrinted) {
+				Serial.print("  Header[3]=0x");
+				Serial.println(header[3], HEX);
+			}
 			if (header[3] == 0x20746d66) {  // "fmt "
+				if (!debugPrinted) Serial.println("✓ Found fmt chunk");
 				header_offset++;
 			} else {
 				// Skip unknown chunk
+				if (!debugPrinted) {
+					Serial.println("  Skipping unknown chunk, looking for fmt");
+				}
 				header_offset = 16;
 				header[0] = header[1];
 				header[1] = header[2];
@@ -303,6 +311,9 @@ bool AudioPlaySdWav::parse_format(void)
 		}
 
 		if (header_offset >= 18) {
+			if (!debugPrinted) {
+				Serial.println("  Reading format data...");
+			}
 			// We have format chunk
 			format = header[4] & 0xFFFF;
 			channels = (header[4] >> 16) & 0xFFFF;
@@ -310,6 +321,18 @@ bool AudioPlaySdWav::parse_format(void)
 			b_rate = header[6];
 			block_align = header[7] & 0xFFFF;
 			bits = (header[7] >> 16) & 0xFFFF;
+
+			if (!debugPrinted) {
+				Serial.print("  Format=");
+				Serial.print(format);
+				Serial.print(" Channels=");
+				Serial.print(channels);
+				Serial.print(" Rate=");
+				Serial.print(rate);
+				Serial.print(" Bits=");
+				Serial.println(bits);
+				debugPrinted = true;
+			}
 
 			// Validate: PCM, stereo, 16-bit, 44100 Hz
 			if (format != 1) goto abort;  // Must be PCM
