@@ -312,16 +312,23 @@ bool AudioPlaySdWav::parse_format(void)
 		}
 
 		if (header_offset >= 18) {
+			// Continue reading until we have enough data (need 36+ bytes = 9 uint32_t)
+			if (header_offset < 36) {
+				// Keep reading more bytes
+				continue;
+			}
+
 			if (!debugPrinted) {
 				Serial.println("  Reading format data...");
 			}
-			// We have format chunk
-			format = header[4] & 0xFFFF;
-			channels = (header[4] >> 16) & 0xFFFF;
-			rate = header[5];
-			b_rate = header[6];
-			block_align = header[7] & 0xFFFF;
-			bits = (header[7] >> 16) & 0xFFFF;
+			// We have format chunk - header[4] = fmt chunk size (usually 16)
+			// Actual format data starts at header[5]
+			format = header[5] & 0xFFFF;
+			channels = (header[5] >> 16) & 0xFFFF;
+			rate = header[6];
+			b_rate = header[7];
+			block_align = header[8] & 0xFFFF;
+			bits = (header[8] >> 16) & 0xFFFF;
 
 			if (!debugPrinted) {
 				Serial.print("  Format=");
