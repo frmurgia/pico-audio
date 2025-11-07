@@ -1,6 +1,9 @@
-/* Audio Library for Teensy, ported to RP2350
+/* Audio Library for Teensy 3.X
  * Copyright (c) 2014, Paul Stoffregen, paul@pjrc.com
- * RP2350 port for pico-audio library
+ *
+ * Development of this audio library was funded by PJRC.COM, LLC by sales of
+ * Teensy and Audio Adaptor boards.  Please support PJRC's efforts to develop
+ * open source software by purchasing Teensy or other PJRC products.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +12,8 @@
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ * The above copyright notice, development funding notice, and this permission
+ * notice shall be included in all copies or substantial portions of the Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -21,42 +24,57 @@
  * THE SOFTWARE.
  */
 
+#include <Arduino.h>
 #include "play_sd_wav.h"
 
-// States
-#define STATE_STOP      0
-#define STATE_PARSE1    1  // Parsing WAV file header
-#define STATE_PARSE2    2
-#define STATE_PARSE3    3
-#define STATE_PARSE4    4
-#define STATE_PARSE5    5
-#define STATE_PLAY      6  // Playing audio data
+#define STATE_DIRECT_8BIT_MONO		0  // playing mono at native sample rate
+#define STATE_DIRECT_8BIT_STEREO	1  // playing stereo at native sample rate
+#define STATE_DIRECT_16BIT_MONO		2  // playing mono at native sample rate
+#define STATE_DIRECT_16BIT_STEREO	3  // playing stereo at native sample rate
+#define STATE_CONVERT_8BIT_MONO		4  // playing mono, converting sample rate
+#define STATE_CONVERT_8BIT_STEREO	5  // playing stereo, converting sample rate
+#define STATE_CONVERT_16BIT_MONO	6  // playing mono, converting sample rate
+#define STATE_CONVERT_16BIT_STEREO	7  // playing stereo, converting sample rate
+#define STATE_PARSE1			8  // looking for 20 byte ID header
+#define STATE_PARSE2			9  // looking for 16 byte format header
+#define STATE_PARSE3			10 // looking for 8 byte data header
+#define STATE_PARSE4			11 // ignoring unknown chunk after "fmt "
+#define STATE_PARSE5			12 // ignoring unknown chunk before "fmt "
+#define STATE_PAUSED			13
+#define STATE_STOP			14
 
 void AudioPlaySdWav::begin(void)
 {
 	state = STATE_STOP;
 	state_play = STATE_STOP;
 	data_length = 0;
-	total_length = 0;
+	if (block_left) {
+		release(block_left);
+		block_left = NULL;
+	}
+	if (block_right) {
+		release(block_right);
+		block_right = NULL;
+	}
 }
+
 
 bool AudioPlaySdWav::play(const char *filename)
 {
 	stop();
-
-	// Open SD card file
+	__disable_irq();
 	wavfile = SD.open(filename);
 	if (!wavfile) {
+		__enable_irq();
 		return false;
 	}
-
 	buffer_length = 0;
 	buffer_offset = 0;
 	state_play = STATE_STOP;
-	data_length = 0;
+	data_length = 20;
 	header_offset = 0;
 	state = STATE_PARSE1;
-
+	__enable_irq();
 	return true;
 }
 
@@ -64,313 +82,443 @@ void AudioPlaySdWav::stop(void)
 {
 	__disable_irq();
 	if (state != STATE_STOP) {
+		audio_block_t *b1 = block_left;
+		block_left = NULL;
+		audio_block_t *b2 = block_right;
+		block_right = NULL;
 		state = STATE_STOP;
-		__enable_irq();
+		if (b1) release(b1);
+		if (b2) release(b2);
 		wavfile.close();
-	} else {
-		__enable_irq();
 	}
+	__enable_irq();
 }
 
-bool AudioPlaySdWav::isPlaying(void)
-{
-	return (state != STATE_STOP);
-}
+void AudioPlaySdWav::togglePlayPause(void) {
+	// take no action if wave header is not parsed OR
+	// state is explicitly STATE_STOP
+	if(state_play >= 8 || state == STATE_STOP) return;
 
-uint32_t AudioPlaySdWav::positionMillis(void)
-{
-	if (state == STATE_STOP) return 0;
-	uint32_t pos = wavfile.position();
-	if (pos < 44) return 0;  // still reading header
-	pos -= 44;               // skip WAV header
-	if (bytes2millis == 0) return 0;
-	return pos / bytes2millis;
-}
-
-uint32_t AudioPlaySdWav::lengthMillis(void)
-{
-	if (bytes2millis == 0) return 0;
-	return total_length / bytes2millis;
+	// toggle back and forth between state_play and STATE_PAUSED
+	if(state == state_play) {
+		state = STATE_PAUSED;
+	}
+	else if(state == STATE_PAUSED) {
+		state = state_play;
+	}
 }
 
 void AudioPlaySdWav::update(void)
 {
-	unsigned int i, n;
-	audio_block_t *left, *right;
+	int32_t n;
 
-	// Debug counter
-	static uint32_t updateCount = 0;
-	bool shouldDebug = ((updateCount++ % 200) == 0);
+	// only update if we're playing and not paused
+	if (state == STATE_STOP || state == STATE_PAUSED) return;
 
-	if (shouldDebug && state != STATE_STOP) {
-		Serial.print("🔧 update() state=");
-		Serial.print(state);
-		Serial.print(" buflen=");
-		Serial.print(buffer_length);
-		Serial.print(" bufoff=");
-		Serial.print(buffer_offset);
-		Serial.print(" datalen=");
-		Serial.println(data_length);
+	// allocate the audio blocks to transmit
+	block_left = allocate();
+	if (block_left == NULL) return;
+	if (state < 8 && (state & 1) == 1) {
+		// if we're playing stereo, allocate another
+		// block for the right channel output
+		block_right = allocate();
+		if (block_right == NULL) {
+			release(block_left);
+			return;
+		}
+	} else {
+		// if we're playing mono or just parsing
+		// the WAV file header, no right-side block
+		block_right = NULL;
 	}
-
-	// Only update if we're playing
-	if (state == STATE_STOP) return;
-
-	// Allocate audio blocks
-	left = allocate();
-	if (left == NULL) {
-		if (shouldDebug) Serial.println("⚠️  Cannot allocate left block");
-		return;
-	}
-	right = allocate();
-	if (right == NULL) {
-		if (shouldDebug) Serial.println("⚠️  Cannot allocate right block");
-		release(left);
-		return;
-	}
-
-	block_left = left;
-	block_right = right;
 	block_offset = 0;
 
-	// State machine for parsing and playback
-	while (1) {
-		switch (state) {
-
-		case STATE_STOP:
-			goto end;
-
-		// Parse WAV file header
-		case STATE_PARSE1:
-			// Read 512 byte chunks for header
-			buffer_length = wavfile.read(buffer, 512);
-			if (shouldDebug) {
-				Serial.print("  PARSE1: Read ");
-				Serial.print(buffer_length);
-				Serial.println(" bytes");
-			}
-			if (buffer_length == 0) goto end;
-			buffer_offset = 0;
-			state = STATE_PARSE2;
-
-		case STATE_PARSE2:
-		case STATE_PARSE3:
-		case STATE_PARSE4:
-		case STATE_PARSE5:
-			// Consume header data
-			if (!parse_format()) goto end;
-			if (state != STATE_PLAY) continue;
-			// Fall through to playback
-
-		case STATE_PLAY:
-			// Fill audio blocks from WAV data
-			n = buffer_length - buffer_offset;
-			if (n == 0) {
-				// Buffer empty, need more data from SD
-				if (data_length == 0) goto end;  // End of file
-
-				// Read next 512 byte chunk
-				buffer_length = wavfile.read(buffer, 512);
-				if (buffer_length == 0) goto end;
-				buffer_offset = 0;
-				n = buffer_length;
-			}
-
-			if (n > data_length) n = data_length;
-
-			// Consume audio data
-			if (consume(n) == 0) goto end;
-
-			// Check if we filled the audio blocks
-			if (block_offset >= AUDIO_BLOCK_SAMPLES) {
-				transmit(block_left, 0);
-				transmit(block_right, 1);
-				goto end;
-			}
-			continue;
-		}
+	// is there buffered data?
+	n = buffer_length - buffer_offset;
+	if (n > 0) {
+		// we have buffered data
+		if (consume(n)) return; // it was enough to transmit audio
 	}
 
-end:
-	if (block_offset > 0) {
-		// Fill rest with zeros
-		for (i = block_offset; i < AUDIO_BLOCK_SAMPLES; i++) {
-			block_left->data[i] = 0;
-			block_right->data[i] = 0;
+	// we only get to this point when buffer[512] is empty
+	if (state != STATE_STOP && wavfile.available()) {
+		// we can read more data from the file...
+		readagain:
+		buffer_length = wavfile.read(buffer, 512);
+		if (buffer_length == 0) goto end;
+		buffer_offset = 0;
+		bool parsing = (state >= 8);
+		bool txok = consume(buffer_length);
+		if (txok) {
+			if (state != STATE_STOP) return;
+		} else {
+			if (state != STATE_STOP) {
+				if (parsing && state < 8) goto readagain;
+				else goto cleanup;
+			}
 		}
-		transmit(block_left, 0);
-		transmit(block_right, 1);
 	}
-	release(left);
-	release(right);
-	block_left = NULL;
-	block_right = NULL;
+end:	// end of file reached or other reason to stop
+	wavfile.close();
+	state_play = STATE_STOP;
+	state = STATE_STOP;
+cleanup:
+	if (block_left) {
+		if (block_offset > 0) {
+			for (uint32_t i=block_offset; i < AUDIO_BLOCK_SAMPLES; i++) {
+				block_left->data[i] = 0;
+			}
+			transmit(block_left, 0);
+			if (state < 8 && (state & 1) == 0) {
+				transmit(block_left, 1);
+			}
+		}
+		release(block_left);
+		block_left = NULL;
+	}
+	if (block_right) {
+		if (block_offset > 0) {
+			for (uint32_t i=block_offset; i < AUDIO_BLOCK_SAMPLES; i++) {
+				block_right->data[i] = 0;
+			}
+			transmit(block_right, 1);
+		}
+		release(block_right);
+		block_right = NULL;
+	}
 }
 
-uint32_t AudioPlaySdWav::consume(uint32_t size)
+
+// Consume already buffered data.  Returns true if audio transmitted.
+bool AudioPlaySdWav::consume(uint32_t size)
 {
 	uint32_t len;
 	uint8_t lsb, msb;
 	const uint8_t *p;
 
 	p = buffer + buffer_offset;
-	if (size == 0) return 0;
-	len = size;
+start:
+	if (size == 0) return false;
 
-	// Copy samples to audio blocks
-	// Assuming 16-bit stereo PCM
-	while (len >= 4 && block_offset < AUDIO_BLOCK_SAMPLES) {
-		// Left channel (LSB first)
-		lsb = *p++;
-		msb = *p++;
-		block_left->data[block_offset] = (msb << 8) | lsb;
+	switch (state) {
+	  // parse wav file header, is this really a .wav file?
+	  case STATE_PARSE1:
+		len = data_length;
+		if (size < len) len = size;
+		memcpy((uint8_t *)header + header_offset, p, len);
+		header_offset += len;
+		buffer_offset += len;
+		data_length -= len;
+		if (data_length > 0) return false;
+		// parse the header...
+		if (header[0] == 0x46464952 && header[2] == 0x45564157) {
+			if (header[3] == 0x20746D66) {
+				// "fmt " header
+				if (header[4] < 16) {
+					// WAV "fmt " info must be at least 16 bytes
+					break;
+				}
+				if (header[4] > sizeof(header)) {
+					// if such .wav files exist, increasing the
+					// size of header[] should accomodate them...
+					break;
+				}
+				header_offset = 0;
+				state = STATE_PARSE2;
+			} else {
+				// first chuck is something other than "fmt "
+				header_offset = 12;
+				state = STATE_PARSE5;
+			}
+			p += len;
+			size -= len;
+			data_length = header[4];
+			goto start;
+		}
+		break;
 
-		// Right channel (LSB first)
-		lsb = *p++;
-		msb = *p++;
-		block_right->data[block_offset] = (msb << 8) | lsb;
+	  // check & extract key audio parameters
+	  case STATE_PARSE2:
+		len = data_length;
+		if (size < len) len = size;
+		memcpy((uint8_t *)header + header_offset, p, len);
+		header_offset += len;
+		buffer_offset += len;
+		data_length -= len;
+		if (data_length > 0) return false;
+		if (parse_format()) {
+			p += len;
+			size -= len;
+			data_length = 8;
+			header_offset = 0;
+			state = STATE_PARSE3;
+			goto start;
+		}
+		break;
 
-		block_offset++;
-		len -= 4;
+	  // find the data chunk
+	  case STATE_PARSE3: // 10
+		len = data_length;
+		if (size < len) len = size;
+		memcpy((uint8_t *)header + header_offset, p, len);
+		header_offset += len;
+		buffer_offset += len;
+		data_length -= len;
+		if (data_length > 0) return false;
+		p += len;
+		size -= len;
+		data_length = header[1];
+		if (header[0] == 0x61746164) {
+			// found "data" chunk
+			leftover_bytes = 0;
+			state = state_play;
+			if (state & 1) {
+				// if we're going to start stereo
+				// better allocate another output block
+				block_right = allocate();
+				if (!block_right) return false;
+			}
+			total_length = data_length;
+		} else {
+			state = STATE_PARSE4;
+		}
+		goto start;
+
+	  // ignore any extra unknown chunks (title & artist info)
+	  case STATE_PARSE4: // 11
+		if (size < data_length) {
+			data_length -= size;
+			buffer_offset += size;
+			return false;
+		}
+		p += data_length;
+		size -= data_length;
+		buffer_offset += data_length;
+		data_length = 8;
+		header_offset = 0;
+		state = STATE_PARSE3;
+		goto start;
+
+	  // skip past "junk" data before "fmt " header
+	  case STATE_PARSE5:
+		len = data_length;
+		if (size < len) len = size;
+		buffer_offset += len;
+		data_length -= len;
+		if (data_length > 0) return false;
+		p += len;
+		size -= len;
+		data_length = 8;
+		state = STATE_PARSE1;
+		goto start;
+
+	  // playing mono at native sample rate
+	  case STATE_DIRECT_8BIT_MONO:
+		return false;
+
+	  // playing stereo at native sample rate
+	  case STATE_DIRECT_8BIT_STEREO:
+		return false;
+
+	  // playing mono at native sample rate
+	  case STATE_DIRECT_16BIT_MONO:
+		if (size > data_length) size = data_length;
+		data_length -= size;
+		while (1) {
+			lsb = *p++;
+			msb = *p++;
+			size -= 2;
+			block_left->data[block_offset++] = (msb << 8) | lsb;
+			if (block_offset >= AUDIO_BLOCK_SAMPLES) {
+				transmit(block_left, 0);
+				transmit(block_left, 1);
+				release(block_left);
+				block_left = NULL;
+				data_length += size;
+				buffer_offset = p - buffer;
+				if (block_right) release(block_right);
+				if (data_length == 0) state = STATE_STOP;
+				return true;
+			}
+			if (size == 0) {
+				if (data_length == 0) break;
+				return false;
+			}
+		}
+		// end of file reached
+		if (block_offset > 0) {
+			// TODO: fill remainder of last block with zero and transmit
+		}
+		state = STATE_STOP;
+		return false;
+
+	  // playing stereo at native sample rate
+	  case STATE_DIRECT_16BIT_STEREO:
+		if (size > data_length) size = data_length;
+		data_length -= size;
+		if (leftover_bytes) {
+			block_left->data[block_offset] = header[0];
+			leftover_bytes = 0;
+			goto right16;
+		}
+		while (1) {
+			lsb = *p++;
+			msb = *p++;
+			size -= 2;
+			if (size == 0) {
+				if (data_length == 0) break;
+				header[0] = (msb << 8) | lsb;
+				leftover_bytes = 2;
+				return false;
+			}
+			block_left->data[block_offset] = (msb << 8) | lsb;
+			right16:
+			lsb = *p++;
+			msb = *p++;
+			size -= 2;
+			block_right->data[block_offset++] = (msb << 8) | lsb;
+			if (block_offset >= AUDIO_BLOCK_SAMPLES) {
+				transmit(block_left, 0);
+				release(block_left);
+				block_left = NULL;
+				transmit(block_right, 1);
+				release(block_right);
+				block_right = NULL;
+				data_length += size;
+				buffer_offset = p - buffer;
+				if (data_length == 0) state = STATE_STOP;
+				return true;
+			}
+			if (size == 0) {
+				if (data_length == 0) break;
+				leftover_bytes = 0;
+				return false;
+			}
+		}
+		// end of file reached
+		if (block_offset > 0) {
+			// TODO: fill remainder of last block with zero and transmit
+		}
+		state = STATE_STOP;
+		return false;
+
+	  // playing mono, converting sample rate
+	  case STATE_CONVERT_8BIT_MONO :
+		return false;
+
+	  // playing stereo, converting sample rate
+	  case STATE_CONVERT_8BIT_STEREO:
+		return false;
+
+	  // playing mono, converting sample rate
+	  case STATE_CONVERT_16BIT_MONO:
+		return false;
+
+	  // playing stereo, converting sample rate
+	  case STATE_CONVERT_16BIT_STEREO:
+		return false;
+
+	  // ignore any extra data after playing
+	  // or anything following any error
+	  case STATE_STOP:
+		return false;
 	}
-
-	uint32_t consumed = size - len;
-	buffer_offset += consumed;
-	data_length -= consumed;
-
-	return consumed;
+	state_play = STATE_STOP;
+	state = STATE_STOP;
+	return false;
 }
+
+
+#define B2M_44100 (uint32_t)((double)4294967296000.0 / AUDIO_SAMPLE_RATE_EXACT)
+#define B2M_22050 (uint32_t)((double)4294967296000.0 / AUDIO_SAMPLE_RATE_EXACT * 2.0)
+#define B2M_11025 (uint32_t)((double)4294967296000.0 / AUDIO_SAMPLE_RATE_EXACT * 4.0)
 
 bool AudioPlaySdWav::parse_format(void)
 {
 	uint8_t num = 0;
 	uint16_t format;
 	uint16_t channels;
-	uint32_t rate, b_rate;
+	uint32_t rate, b2m;
 	uint16_t bits;
-	uint16_t block_align;
 
-	static bool debugPrinted = false;
+	format = header[0];
+	if (format != 1) return false;
 
-	while (state != STATE_PLAY) {
-		if (buffer_offset >= buffer_length) {
-			if (!debugPrinted) {
-				Serial.println("  parse_format: buffer_offset >= buffer_length, returning false");
-				debugPrinted = true;
-			}
-			return false;
-		}
-
-		((uint8_t *)header)[header_offset++] = buffer[buffer_offset++];
-
-		if (header_offset == 1 && !debugPrinted) {
-			Serial.println("  parse_format: Starting to parse header");
-		}
-
-		if (header_offset < 16) continue;
-
-		// Parse WAV header (simplified)
-		if (header_offset == 16) {
-			// Check RIFF header
-			if (!debugPrinted) {
-				Serial.print("  Header[0]=0x");
-				Serial.print(header[0], HEX);
-				Serial.print(" Header[2]=0x");
-				Serial.println(header[2], HEX);
-			}
-			if (header[0] != 0x46464952) {
-				Serial.println("❌ Not a RIFF file!");
-				goto abort;  // "RIFF"
-			}
-			if (header[2] != 0x45564157) {
-				Serial.println("❌ Not a WAVE file!");
-				goto abort;  // "WAVE"
-			}
-			if (!debugPrinted) Serial.println("✓ RIFF/WAVE header OK");
-			header_offset++;
-		}
-
-		if (header_offset == 17) {
-			// Look for "fmt " chunk
-			if (!debugPrinted) {
-				Serial.print("  Header[3]=0x");
-				Serial.println(header[3], HEX);
-			}
-			if (header[3] == 0x20746d66) {  // "fmt "
-				if (!debugPrinted) Serial.println("✓ Found fmt chunk");
-				header_offset++;
-			} else {
-				// Skip unknown chunk
-				if (!debugPrinted) {
-					Serial.println("  Skipping unknown chunk, looking for fmt");
-				}
-				header_offset = 16;
-				header[0] = header[1];
-				header[1] = header[2];
-				header[2] = header[3];
-			}
-		}
-
-		if (header_offset >= 18) {
-			// Continue reading until we have enough data (need 36+ bytes = 9 uint32_t)
-			if (header_offset < 36) {
-				// Keep reading more bytes
-				continue;
-			}
-
-			if (!debugPrinted) {
-				Serial.println("  Reading format data...");
-			}
-			// We have format chunk - header[4] = fmt chunk size (usually 16)
-			// Actual format data starts at header[5]
-			format = header[5] & 0xFFFF;
-			channels = (header[5] >> 16) & 0xFFFF;
-			rate = header[6];
-			b_rate = header[7];
-			block_align = header[8] & 0xFFFF;
-			bits = (header[8] >> 16) & 0xFFFF;
-
-			if (!debugPrinted) {
-				Serial.print("  Format=");
-				Serial.print(format);
-				Serial.print(" Channels=");
-				Serial.print(channels);
-				Serial.print(" Rate=");
-				Serial.print(rate);
-				Serial.print(" Bits=");
-				Serial.println(bits);
-				debugPrinted = true;
-			}
-
-			// Validate: PCM, stereo, 16-bit, 44100 Hz
-			if (format != 1) goto abort;  // Must be PCM
-			if (channels != 2) goto abort; // Must be stereo
-			if (bits != 16) goto abort;   // Must be 16-bit
-
-			// Calculate bytes to milliseconds conversion
-			bytes2millis = b_rate / 1000;
-
-			// Look for "data" chunk
-			header_offset = 16;
-			state = STATE_PARSE3;
-		}
+	rate = header[1];
+	if (rate == 44100) {
+		b2m = B2M_44100;
+	} else if (rate == 22050) {
+		b2m = B2M_22050;
+		num |= 4;
+	} else if (rate == 11025) {
+		b2m = B2M_11025;
+		num |= 4;
+	} else {
+		return false;
 	}
 
-	if (state == STATE_PARSE3) {
-		// Look for data chunk
-		if (header_offset >= 18) {
-			if (header[3] == 0x61746164) {  // "data"
-				data_length = header[4];
-				total_length = data_length;
-				state = STATE_PLAY;
-				return true;
-			}
-		}
+	channels = header[0] >> 16;
+	if (channels == 1) {
+	} else if (channels == 2) {
+		b2m >>= 1;
+		num |= 1;
+	} else {
+		return false;
 	}
 
-	return false;
+	bits = header[3] >> 16;
+	if (bits == 8) {
+	} else if (bits == 16) {
+		b2m >>= 1;
+		num |= 2;
+	} else {
+		return false;
+	}
 
-abort:
-	stop();
-	return false;
+	bytes2millis = b2m;
+	state_play = num;
+	return true;
+}
+
+
+bool AudioPlaySdWav::isPlaying(void)
+{
+	uint8_t s = *(volatile uint8_t *)&state;
+	return (s < 8);
+}
+
+
+bool AudioPlaySdWav::isPaused(void)
+{
+	uint8_t s = *(volatile uint8_t *)&state;
+	return (s == STATE_PAUSED);
+}
+
+
+bool AudioPlaySdWav::isStopped(void)
+{
+	uint8_t s = *(volatile uint8_t *)&state;
+	return (s == STATE_STOP);
+}
+
+
+uint32_t AudioPlaySdWav::positionMillis(void)
+{
+	uint8_t s = *(volatile uint8_t *)&state;
+	if (s >= 8 && s != STATE_PAUSED) return 0;
+	uint32_t tlength = *(volatile uint32_t *)&total_length;
+	uint32_t dlength = *(volatile uint32_t *)&data_length;
+	uint32_t offset = tlength - dlength;
+	uint32_t b2m = *(volatile uint32_t *)&bytes2millis;
+	return ((uint64_t)offset * b2m) >> 32;
+}
+
+
+uint32_t AudioPlaySdWav::lengthMillis(void)
+{
+	uint8_t s = *(volatile uint8_t *)&state;
+	if (s >= 8 && s != STATE_PAUSED) return 0;
+	uint32_t tlength = *(volatile uint32_t *)&total_length;
+	uint32_t b2m = *(volatile uint32_t *)&bytes2millis;
+	return ((uint64_t)tlength * b2m) >> 32;
 }

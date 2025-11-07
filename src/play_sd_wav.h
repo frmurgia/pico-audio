@@ -1,6 +1,9 @@
-/* Audio Library for Teensy, ported to RP2350
+/* Audio Library for Teensy 3.X
  * Copyright (c) 2014, Paul Stoffregen, paul@pjrc.com
- * RP2350 port for pico-audio library
+ *
+ * Development of this audio library was funded by PJRC.COM, LLC by sales of
+ * Teensy and Audio Adaptor boards.  Please support PJRC's efforts to develop
+ * open source software by purchasing Teensy or other PJRC products.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +12,8 @@
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ * The above copyright notice, development funding notice, and this permission
+ * notice shall be included in all copies or substantial portions of the Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -31,31 +34,33 @@
 class AudioPlaySdWav : public AudioStream
 {
 public:
-	AudioPlaySdWav(void) : AudioStream(0, NULL),
-		block_left(NULL), block_right(NULL) { begin(); }
+	AudioPlaySdWav(void) : AudioStream(0, NULL), block_left(NULL), block_right(NULL) { begin(); }
 	void begin(void);
 	bool play(const char *filename);
+	void togglePlayPause(void);
 	void stop(void);
 	bool isPlaying(void);
+	bool isPaused(void);
+	bool isStopped(void);
 	uint32_t positionMillis(void);
 	uint32_t lengthMillis(void);
 	virtual void update(void);
 private:
 	File wavfile;
-	uint32_t consume(uint32_t size);
+	bool consume(uint32_t size);
 	bool parse_format(void);
-	uint32_t header[10];        // WAV file header
-	uint32_t data_length;       // number of bytes remaining in current section
-	uint32_t total_length;      // number of audio data bytes in file
+	uint32_t header[10];		// temporary storage of wav header data
+	uint32_t data_length;		// number of bytes remaining in current section
+	uint32_t total_length;		// number of audio data bytes in file
 	uint32_t bytes2millis;
 	audio_block_t *block_left;
 	audio_block_t *block_right;
-	uint16_t block_offset;      // how much data is in block_left & block_right
-	uint8_t buffer[512];        // buffer one block of data
-	uint16_t buffer_offset;     // where we're at consuming "buffer"
-	uint16_t buffer_length;     // how much data is in "buffer" (512 until last read)
-	uint8_t header_offset;      // where we're at reading the WAV file header
-	uint8_t state;              // 0=stopped, 1-14=playing, see defines in .cpp
+	uint16_t block_offset;		// how much data is in block_left & block_right
+	uint8_t buffer[512];		// buffer one block of data
+	uint16_t buffer_offset;		// where we're at consuming "buffer"
+	uint16_t buffer_length;		// how much data is in "buffer" (512 until last read)
+	uint8_t header_offset;		// number of bytes in header[]
+	uint8_t state;
 	uint8_t state_play;
 	uint8_t leftover_bytes;
 };
