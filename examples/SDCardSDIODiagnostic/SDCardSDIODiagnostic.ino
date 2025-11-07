@@ -27,8 +27,8 @@
 #include <hardware/gpio.h>
 
 // SDIO Pin Configuration (VERIFIED WORKING)
-#define SDIO_CLK_PIN  7
-#define SDIO_CMD_PIN  6
+#define SDIO_CLK_PIN  6
+#define SDIO_CMD_PIN  7
 #define SDIO_DAT0_PIN 8  // DAT1=9, DAT2=10, DAT3=11 (consecutive!)
 
 // SPI Pin Configuration

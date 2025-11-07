@@ -67,7 +67,7 @@ AudioConnection patchCord13(mixer3, 0, i2s1, 0);
 AudioConnection patchCord14(mixer3, 0, i2s1, 1);
 
 // Global state
-float globalVolume = 0.3;  // 30% per channel
+float globalVolume = 0.6;  // 30% per channel
 bool sdInitialized = false;
 
 void setup() {

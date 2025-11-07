@@ -29,10 +29,10 @@
 #include <pico-audio.h>
 
 // SD Card pin configuration
-#define SD_CS_PIN   5
-#define SD_SCK_PIN  6
-#define SD_MOSI_PIN 7
-#define SD_MISO_PIN 4
+#define SD_CS_PIN   17
+#define SD_SCK_PIN  18
+#define SD_MOSI_PIN 19
+#define SD_MISO_PIN 16
 
 // Number of simultaneous players
 #define NUM_PLAYERS 10

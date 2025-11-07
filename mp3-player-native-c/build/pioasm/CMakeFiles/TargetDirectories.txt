@@ -1,0 +1,7 @@
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm/CMakeFiles/pioasm.dir
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm/CMakeFiles/edit_cache.dir
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm/CMakeFiles/rebuild_cache.dir
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm/CMakeFiles/list_install_components.dir
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm/CMakeFiles/install.dir
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm/CMakeFiles/install/local.dir
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm/CMakeFiles/install/strip.dir

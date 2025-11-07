@@ -1,0 +1,5 @@
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm-install/pioasm/pioasm
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm-install/pioasm/pioasmTargets.cmake
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm-install/pioasm/pioasmTargets-release.cmake
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm-install/pioasm/pioasmConfig.cmake
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/pioasm-install/pioasm/pioasmConfigVersion.cmake

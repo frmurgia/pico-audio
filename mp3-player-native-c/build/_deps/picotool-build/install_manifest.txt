@@ -1,0 +1,7 @@
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool/picotool
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool/picotoolTargets.cmake
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool/picotoolTargets-release.cmake
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool/picotoolConfig.cmake
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool/picotoolConfigVersion.cmake
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool/enc_bootloader.elf
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool/enc_bootloader_mbedtls.elf

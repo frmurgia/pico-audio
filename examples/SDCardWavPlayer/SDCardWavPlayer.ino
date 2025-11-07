@@ -25,11 +25,13 @@
 #include <SD.h>
 #include <pico-audio.h>
 
-// SD Card pin configuration
-#define SD_CS_PIN   5
-#define SD_SCK_PIN  6
-#define SD_MOSI_PIN 7
-#define SD_MISO_PIN 4
+
+// SPI Pin Configuration
+#define SD_CS_PIN   17    // Chip Select
+#define SD_SCK_PIN  18    // Clock
+#define SD_MOSI_PIN 19    // Master Out Slave In
+#define SD_MISO_PIN 17    // Master In Slave Out
+
 
 // Number of simultaneous players
 #define NUM_PLAYERS 10

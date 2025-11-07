@@ -54,11 +54,10 @@
 #include <pico/mutex.h>
 
 // SPI Pin Configuration
-#define SD_CS_PIN   3
-#define SD_SCK_PIN  6
-#define SD_MOSI_PIN 7
-#define SD_MISO_PIN 0
-
+#define SD_CS_PIN   11 
+#define SD_SCK_PIN  7
+#define SD_MOSI_PIN 6
+#define SD_MISO_PIN 8
 // Performance tuning
 #define NUM_PLAYERS 10
 #define BUFFER_SIZE (32 * 1024)  // 32KB per player = 744ms @ 44.1kHz stereo

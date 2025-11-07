@@ -15,9 +15,9 @@
 // DAT0 = GP8 (DAT1=9, DAT2=10, DAT3=11 consecutive)
 
 static sd_sdio_if_t sdio_if = {
-    .CMD_gpio = 6,
+    .CMD_gpio = 7,
     .D0_gpio = 8,     // D1=9, D2=10, D3=11 automatically
-    .CLK_gpio = 7,
+    .CLK_gpio = 6,
     .baud_rate = 20 * 1000 * 1000,  // 20 MHz
     .SDIO_PIO = pio1,
     .DMA_IRQ_num = DMA_IRQ_1,

@@ -1,0 +1,3 @@
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/CMakeFiles/picotool-populate.dir
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/CMakeFiles/edit_cache.dir
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/CMakeFiles/rebuild_cache.dir

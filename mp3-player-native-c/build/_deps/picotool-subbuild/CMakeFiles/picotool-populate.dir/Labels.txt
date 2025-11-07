@@ -1,0 +1,14 @@
+# Target labels
+ picotool-populate
+# Source files and their labels
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/CMakeFiles/picotool-populate
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/CMakeFiles/picotool-populate.rule
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/CMakeFiles/picotool-populate-complete.rule
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/picotool-populate-prefix/src/picotool-populate-stamp/picotool-populate-build.rule
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/picotool-populate-prefix/src/picotool-populate-stamp/picotool-populate-configure.rule
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/picotool-populate-prefix/src/picotool-populate-stamp/picotool-populate-download.rule
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/picotool-populate-prefix/src/picotool-populate-stamp/picotool-populate-install.rule
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/picotool-populate-prefix/src/picotool-populate-stamp/picotool-populate-mkdir.rule
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/picotool-populate-prefix/src/picotool-populate-stamp/picotool-populate-patch.rule
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/picotool-populate-prefix/src/picotool-populate-stamp/picotool-populate-test.rule
+/Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/build/_deps/picotool-subbuild/picotool-populate-prefix/src/picotool-populate-stamp/picotool-populate-update.rule

@@ -52,8 +52,8 @@
 #include "minimp3.h"
 
 // SDIO Pin Configuration for RP2350
-#define SD_CLK_PIN  7
-#define SD_CMD_PIN  6
+#define SD_CLK_PIN  6
+#define SD_CMD_PIN  7
 #define SD_DAT0_PIN 8  // DAT1=9, DAT2=10, DAT3=11 (consecutive!)
 
 // Number of simultaneous players
@@ -143,7 +143,7 @@ void core1_fillBuffer(int playerIndex);
 //=============================================================================
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   unsigned long startTime = millis();
   while (!Serial && (millis() - startTime < 5000)) {

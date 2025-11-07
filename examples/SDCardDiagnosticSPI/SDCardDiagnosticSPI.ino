@@ -25,11 +25,16 @@
 #include <SD.h>
 #include <SPI.h>
 
-// SPI Pin Configuration
-#define SD_CS_PIN   3
-#define SD_SCK_PIN  6
-#define SD_MOSI_PIN 7
-#define SD_MISO_PIN 0
+
+// SD SCK → GP18
+// SD MOSI → GP19
+// SD MISO → GP16
+// SD CS → GP17
+
+#define SD_CS_PIN   13    // Chip Select
+#define SD_SCK_PIN  10    // Clock
+#define SD_MOSI_PIN 11    // Master Out Slave In
+#define SD_MISO_PIN 12    // Master In Slave Out1
 
 void setup() {
   Serial.begin(115200);

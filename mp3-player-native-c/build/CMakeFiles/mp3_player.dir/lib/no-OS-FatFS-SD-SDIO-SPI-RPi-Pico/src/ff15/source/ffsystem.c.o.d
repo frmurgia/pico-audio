@@ -1,0 +1,25 @@
+CMakeFiles/mp3_player.dir/lib/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/src/ff15/source/ffsystem.c.o: \
+ /Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/lib/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/src/ff15/source/ffsystem.c \
+ /Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/lib/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/src/ff15/source/ff.h \
+ /Users/daniele/Documents/Arduino/libraries/pico-audio/mp3-player-native-c/lib/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/src/include/ffconf.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/lib/gcc/arm-none-eabi/13.2.1/include/stdint.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/stdint.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/machine/_default_types.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/sys/features.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/_newlib_version.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/sys/_intsup.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/sys/_stdint.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/stdlib.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/machine/ieeefp.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/_ansi.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/newlib.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/sys/config.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/lib/gcc/arm-none-eabi/13.2.1/include/stddef.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/sys/reent.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/_ansi.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/sys/cdefs.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/sys/_types.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/machine/_types.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/sys/lock.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/machine/stdlib.h \
+ /Users/daniele/.pico-sdk/toolchain/13_2_Rel1/arm-none-eabi/include/alloca.h
