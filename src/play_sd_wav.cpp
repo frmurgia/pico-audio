@@ -26,6 +26,12 @@
 
 #include <Arduino.h>
 #include "play_sd_wav.h"
+#include <pico/mutex.h>
+
+// Global mutex to serialize SD card access across all AudioPlaySdWav instances
+// Required because RP2350 SDIO hardware cannot handle concurrent file operations
+static mutex_t sd_mutex;
+static bool sd_mutex_initialized = false;
 
 #define STATE_DIRECT_8BIT_MONO		0  // playing mono at native sample rate
 #define STATE_DIRECT_8BIT_STEREO	1  // playing stereo at native sample rate
@@ -45,6 +51,12 @@
 
 void AudioPlaySdWav::begin(void)
 {
+	// Initialize global SD mutex once
+	if (!sd_mutex_initialized) {
+		mutex_init(&sd_mutex);
+		sd_mutex_initialized = true;
+	}
+
 	state = STATE_STOP;
 	state_play = STATE_STOP;
 	data_length = 0;
@@ -63,7 +75,12 @@ bool AudioPlaySdWav::play(const char *filename)
 {
 	stop();
 	__disable_irq();
+
+	// Protect SD.open() with mutex - critical for multi-instance SDIO
+	mutex_enter_blocking(&sd_mutex);
 	wavfile = SD.open(filename);
+	mutex_exit(&sd_mutex);
+
 	if (!wavfile) {
 		__enable_irq();
 		return false;
@@ -89,7 +106,11 @@ void AudioPlaySdWav::stop(void)
 		state = STATE_STOP;
 		if (b1) release(b1);
 		if (b2) release(b2);
+
+		// Protect SD close with mutex
+		mutex_enter_blocking(&sd_mutex);
 		wavfile.close();
+		mutex_exit(&sd_mutex);
 	}
 	__enable_irq();
 }
@@ -144,7 +165,11 @@ void AudioPlaySdWav::update(void)
 	if (state != STATE_STOP && wavfile.available()) {
 		// we can read more data from the file...
 		readagain:
+		// Protect SD read with mutex - critical for multi-instance SDIO
+		mutex_enter_blocking(&sd_mutex);
 		buffer_length = wavfile.read(buffer, 512);
+		mutex_exit(&sd_mutex);
+
 		if (buffer_length == 0) goto end;
 		buffer_offset = 0;
 		bool parsing = (state >= 8);
@@ -159,7 +184,9 @@ void AudioPlaySdWav::update(void)
 		}
 	}
 end:	// end of file reached or other reason to stop
+	mutex_enter_blocking(&sd_mutex);
 	wavfile.close();
+	mutex_exit(&sd_mutex);
 	state_play = STATE_STOP;
 	state = STATE_STOP;
 cleanup:
