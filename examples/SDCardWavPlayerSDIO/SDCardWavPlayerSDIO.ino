@@ -735,9 +735,9 @@ void core1_openFile(int playerIndex) {
 void core1_fillBuffer(int playerIndex) {
   WavPlayer* player = &players[playerIndex];
 
-  // Debug: Print every 500 calls for Player 1 only (reduced spam)
-  static uint32_t debugCounter = 0;
-  bool shouldDebug = (playerIndex == 0 && (++debugCounter % 500 == 0));
+  // Debug: Print every 500 calls for ALL players to diagnose multi-player issues
+  static uint32_t debugCounter[NUM_PLAYERS] = {0};
+  bool shouldDebug = ((++debugCounter[playerIndex] % 500) == 0);
 
   // Check if buffer needs filling
   mutex_enter_blocking(&player->mutex);
@@ -746,7 +746,9 @@ void core1_fillBuffer(int playerIndex) {
   mutex_exit(&player->mutex);
 
   if (shouldDebug) {
-    Serial.print("🔧 fillBuffer P1: avail=");
+    Serial.print("🔧 fillBuffer P");
+    Serial.print(playerIndex + 1);
+    Serial.print(": avail=");
     Serial.print(available);
     Serial.print("/");
     Serial.print(BUFFER_SIZE);
