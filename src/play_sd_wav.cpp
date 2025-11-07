@@ -162,7 +162,12 @@ void AudioPlaySdWav::update(void)
 	}
 
 	// we only get to this point when buffer[512] is empty
-	if (state != STATE_STOP && wavfile.available()) {
+	// Protect SD operations with mutex - critical for multi-instance SDIO
+	mutex_enter_blocking(&sd_mutex);
+	bool fileAvailable = wavfile.available();
+	mutex_exit(&sd_mutex);
+
+	if (state != STATE_STOP && fileAvailable) {
 		// we can read more data from the file...
 		readagain:
 		// Protect SD read with mutex - critical for multi-instance SDIO
