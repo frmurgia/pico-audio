@@ -73,9 +73,9 @@ struct WavHeader {
 
 // Player state - accessed by both cores
 struct WavPlayer {
-  // File handle - ONLY accessed by Core1
-  File file;
-  volatile bool fileOpen;  // Track if file is open (File object bool check unreliable)
+  // File info - NO file kept open (open/read/close pattern for SDIO multi-file performance)
+  uint32_t dataStartPosition;  // Position in file where audio data starts
+  volatile bool fileOpen;  // Track if file is ready to read
 
   // Audio queue - ONLY accessed by Core0
   AudioPlayQueue queue;
@@ -129,6 +129,10 @@ float globalVolume = 0.3;  // 30% per channel
 volatile bool core1Running = false;
 volatile bool sdInitialized = false;
 
+// Global SD mutex - serialize ALL file operations for SDIO performance
+mutex_t sd_mutex;
+bool sd_mutex_initialized = false;
+
 // Forward declarations
 void core1_main();
 void playTrack(int playerIndex);
@@ -163,6 +167,12 @@ void setup() {
   Serial.println("  DAT2: GP10");
   Serial.println("  DAT3: GP11");
   Serial.println();
+
+  // Initialize global SD mutex
+  if (!sd_mutex_initialized) {
+    mutex_init(&sd_mutex);
+    sd_mutex_initialized = true;
+  }
 
   // Initialize audio
   AudioMemory(120);
@@ -541,7 +551,7 @@ void core1_servicePlayer(int playerIndex) {
 
   // Check if stop requested
   if (player->stopRequested && player->fileOpen) {
-    player->file.close();
+    // No file to close - using open/read/close pattern
     player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
@@ -559,9 +569,11 @@ void core1_servicePlayer(int playerIndex) {
 void core1_openFile(int playerIndex) {
   WavPlayer* player = &players[playerIndex];
 
-  // Open file
-  player->file = SD.open(player->filename, FILE_READ);
-  if (!player->file) {
+  // Open file temporarily to parse header (with global mutex)
+  mutex_enter_blocking(&sd_mutex);
+  File file = SD.open(player->filename, FILE_READ);
+  if (!file) {
+    mutex_exit(&sd_mutex);
     // File open failed - print error (critical for debugging)
     Serial.print("❌ ERROR: Cannot open file: ");
     Serial.println(player->filename);
@@ -574,11 +586,12 @@ void core1_openFile(int playerIndex) {
 
   // Read WAV header
   WavHeader header;
-  if (player->file.read((uint8_t*)&header, sizeof(WavHeader)) != sizeof(WavHeader)) {
+  if (file.read((uint8_t*)&header, sizeof(WavHeader)) != sizeof(WavHeader)) {
     // Header read failed
+    file.close();
+    mutex_exit(&sd_mutex);
     Serial.print("❌ ERROR: Cannot read WAV header: ");
     Serial.println(player->filename);
-    player->file.close();
     player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
@@ -592,6 +605,8 @@ void core1_openFile(int playerIndex) {
       header.audioFormat != 1 ||  // PCM
       header.bitsPerSample != 16) {
     // Invalid format
+    file.close();
+    mutex_exit(&sd_mutex);
     Serial.print("❌ ERROR: Invalid WAV format: ");
     Serial.print(player->filename);
     Serial.print(" (fmt=");
@@ -599,7 +614,6 @@ void core1_openFile(int playerIndex) {
     Serial.print(", bits=");
     Serial.print(header.bitsPerSample);
     Serial.println(")");
-    player->file.close();
     player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
@@ -614,24 +628,27 @@ void core1_openFile(int playerIndex) {
   uint32_t chunkSize;
   bool foundData = false;
 
-  while (player->file.available()) {
-    if (player->file.read((uint8_t*)chunkID, 4) != 4) break;
-    if (player->file.read((uint8_t*)&chunkSize, 4) != 4) break;
+  while (file.available()) {
+    if (file.read((uint8_t*)chunkID, 4) != 4) break;
+    if (file.read((uint8_t*)&chunkSize, 4) != 4) break;
 
     if (strncmp(chunkID, "data", 4) == 0) {
       player->dataSize = chunkSize;
+      player->dataStartPosition = file.position();  // Save where audio data starts!
       foundData = true;
       break;
     } else {
-      player->file.seek(player->file.position() + chunkSize);
+      file.seek(file.position() + chunkSize);
     }
   }
+
+  file.close();  // Close immediately after parsing header
+  mutex_exit(&sd_mutex);  // Release SD mutex
 
   if (!foundData) {
     // No data chunk found
     Serial.print("❌ ERROR: No data chunk in WAV file: ");
     Serial.println(player->filename);
-    player->file.close();
     player->fileOpen = false;
     mutex_enter_blocking(&player->mutex);
     player->playing = false;
@@ -640,7 +657,7 @@ void core1_openFile(int playerIndex) {
   }
 
   // File ready to play successfully!
-  player->fileOpen = true;  // CRITICAL: Mark file as open
+  player->fileOpen = true;  // CRITICAL: Mark file as ready
   Serial.print("✓ Player ");
   Serial.print(playerIndex + 1);
   Serial.print(": ");
@@ -712,10 +729,31 @@ void core1_fillBuffer(int playerIndex) {
   // KEEP static for performance - but document that Core1 is single-threaded so this is safe
   static int16_t tempBuffer[2048];
 
-  // Read without holding mutex (only this core writes to buffer)
+  // CRITICAL: Open/Seek/Read/Close pattern for SDIO multi-file performance
+  // SDIO with 3+ files open simultaneously has terrible performance
+  // Opening/closing for each read is MUCH faster than keeping files open!
+
+  // LOCK SD mutex for entire open/seek/read/close operation
+  mutex_enter_blocking(&sd_mutex);
+
+  File file = SD.open(player->filename, FILE_READ);
+  if (!file) {
+    mutex_exit(&sd_mutex);
+    if (shouldDebug) Serial.println(" → OPEN FAIL!");
+    return;  // File open failed
+  }
+
+  // Seek to current position in audio data
+  file.seek(player->dataStartPosition + player->dataPosition);
+
+  // Read data
+  uint32_t bytesRead = 0;
   if (player->numChannels == 1) {
     // Mono - read entire chunk at once
-    uint32_t bytesRead = player->file.read((uint8_t*)tempBuffer, bytesToRead);
+    bytesRead = file.read((uint8_t*)tempBuffer, bytesToRead);
+    file.close();  // Close immediately after read!
+    mutex_exit(&sd_mutex);  // Release SD mutex
+
     uint32_t samplesRead = bytesRead / 2;
 
     if (shouldDebug) {
@@ -737,7 +775,10 @@ void core1_fillBuffer(int playerIndex) {
     samplesToRead = samplesRead;  // Update for mutex section below
   } else {
     // Stereo - read entire chunk at once, then mix
-    uint32_t bytesRead = player->file.read((uint8_t*)tempBuffer, bytesToRead);
+    bytesRead = file.read((uint8_t*)tempBuffer, bytesToRead);
+    file.close();  // Close immediately after read!
+    mutex_exit(&sd_mutex);  // Release SD mutex
+
     uint32_t samplesRead = bytesRead / 2;
 
     if (shouldDebug) {

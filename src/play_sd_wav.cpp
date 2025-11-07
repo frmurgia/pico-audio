@@ -61,6 +61,7 @@ void AudioPlaySdWav::begin(void)
 	state_play = STATE_STOP;
 	data_length = 0;
 	filename[0] = 0;
+	file_position = 0;
 	if (block_left) {
 		release(block_left);
 		block_left = NULL;
@@ -76,19 +77,20 @@ bool AudioPlaySdWav::play(const char *fname)
 {
 	stop();
 
-	// Open file and keep it open during playback
+	// Test if file exists (quick open/close test)
 	__disable_irq();
 	mutex_enter_blocking(&sd_mutex);
-	wavfile = SD.open(fname);
-	bool opened = (bool)wavfile;
+	File testFile = SD.open(fname);
+	bool exists = (bool)testFile;
+	if (testFile) testFile.close();
 	mutex_exit(&sd_mutex);
 	__enable_irq();
 
-	if (!opened) {
+	if (!exists) {
 		return false;
 	}
 
-	// Save filename for reference
+	// Save filename for open/read/close pattern
 	strncpy(this->filename, fname, sizeof(this->filename) - 1);
 	this->filename[sizeof(this->filename) - 1] = 0;
 
@@ -98,6 +100,7 @@ bool AudioPlaySdWav::play(const char *fname)
 	state_play = STATE_STOP;
 	data_length = 20;
 	header_offset = 0;
+	file_position = 0;
 	state = STATE_PARSE1;
 
 	return true;
@@ -114,14 +117,8 @@ void AudioPlaySdWav::stop(void)
 		state = STATE_STOP;
 		if (b1) release(b1);
 		if (b2) release(b2);
-
-		// Close file if open
-		if (wavfile) {
-			mutex_enter_blocking(&sd_mutex);
-			wavfile.close();
-			mutex_exit(&sd_mutex);
-		}
 		filename[0] = 0;
+		// No file to close - using open/read/close pattern
 	}
 	__enable_irq();
 }
@@ -173,10 +170,28 @@ void AudioPlaySdWav::update(void)
 	}
 
 	// we only get to this point when buffer[512] is empty
-	if (state != STATE_STOP && wavfile) {
-		// Read from already-open file with mutex protection
+	if (state != STATE_STOP && filename[0] != 0) {
+		// Atomic open/seek/read/close pattern - CRITICAL for SDIO multi-instance support
+		// SDIO cannot have multiple files open simultaneously, so we:
+		// 1. Lock mutex
+		// 2. Open file
+		// 3. Seek to position
+		// 4. Read 512 bytes
+		// 5. Close file immediately
+		// 6. Unlock mutex
+		// This serializes ALL file access across ALL AudioPlaySdWav instances
+
 		mutex_enter_blocking(&sd_mutex);
-		buffer_length = wavfile.read(buffer, 512);
+		wavfile = SD.open(filename);
+		bool opened = (bool)wavfile;
+
+		if (opened) {
+			wavfile.seek(file_position);
+			buffer_length = wavfile.read(buffer, 512);
+			wavfile.close();
+		} else {
+			buffer_length = 0;
+		}
 		mutex_exit(&sd_mutex);
 
 		// Debug: Show buffer read activity (only once per second to avoid spam)
@@ -186,12 +201,15 @@ void AudioPlaySdWav::update(void)
 			Serial.print("Read: ");
 			Serial.print(buffer_length);
 			Serial.print(" bytes, Pos: ");
-			Serial.print(wavfile.position());
+			Serial.print(file_position);
 			Serial.print(", State: ");
 			Serial.println(state);
 		}
 
 		if (buffer_length == 0) goto end;
+
+		// Update file position for next read
+		file_position += buffer_length;
 
 		buffer_offset = 0;
 		bool txok = consume(buffer_length);
@@ -199,7 +217,7 @@ void AudioPlaySdWav::update(void)
 			if (state != STATE_STOP) return;
 		}
 		// If consume didn't complete, return and let next update() read more data
-		// This prevents multiple operations in a single update() call
+		// This prevents multiple SD card operations in a single update() call
 		if (state != STATE_STOP) return;
 	}
 end:	// end of file reached or other reason to stop
