@@ -42,7 +42,7 @@ public:
 	virtual void update(void);
 private:
 	File wavfile;
-	bool consume(uint32_t size);
+	uint32_t consume(uint32_t size);
 	bool parse_format(void);
 	uint32_t header[10];        // WAV file header
 	uint32_t data_length;       // number of bytes remaining in current section
